@@ -97,6 +97,10 @@ Repository structure:
 
 Generated `.ablx` files and converted sample banks are intentionally excluded from version control.
 
-## Licence
+## License
 
-Copyright © 2026 Aaron Werinussa. All rights reserved. See [LICENSE.txt](LICENSE.txt).
+This project is released under the [MIT License](LICENSE).
+
+You are free to use, modify and distribute the code, provided that the original copyright notice and licence are included.
+
+Copyright (c) 2026 Aaron Werinussa
