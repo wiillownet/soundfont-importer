@@ -345,7 +345,7 @@ async function ensureInitialOutputFolders(environment) {
   const samplesRoot = path.join(outputRoot, "Samples");
   await fsp.mkdir(browserRoot, { recursive: true });
   await fsp.mkdir(samplesRoot, { recursive: true });
-  await writeReadme(outputRoot, browserRoot);
+  await writeReadme(outputRoot);
   console.log(`[soundfont-importer] Output folders ready: ${browserRoot}`);
 }
 
@@ -473,8 +473,7 @@ async function importSf2ToTrack(context, track, importRequest) {
     result = await writeSamplerPresets(sf2, exported, presetsDir, samplesDir, outputRoot);
     result.rootDir = browserRoot;
     result.internalRootDir = outputRoot;
-    result.userLibraryTarget = defaultAbletonUserLibraryDir();
-    await writeImportReadme(outputRoot, result);
+    await writeImportReadme(outputRoot);
     console.log(`[soundfont-importer] Imported ${sf2Path}`);
     console.log(`[soundfont-importer] Presets: ${presetsDir}`);
     console.log(`[soundfont-importer] Samples: ${samplesDir}`);
@@ -529,13 +528,6 @@ async function findFileWithSpotlight(fileName) {
     }
   }
   return null;
-}
-
-function defaultAbletonUserLibraryDir() {
-  if (process.platform === "win32") {
-    return path.join(os.homedir(), "Documents", "Ableton", "User Library");
-  }
-  return path.join(os.homedir(), "Music", "Ableton", "User Library");
 }
 
 function commonUserSearchRoots() {
@@ -858,45 +850,121 @@ async function writeSamplerPresets(sf2, exported, presetsDir, samplesDir, userLi
   return { presetCount, sampleCount: exported.length, zoneCount, presetsDir, samplesDir };
 }
 
-async function writeImportReadme(rootDir, result) {
-  await writeReadme(rootDir, result.rootDir);
+async function writeImportReadme(rootDir) {
+  await writeReadme(rootDir);
 }
 
-async function writeReadme(rootDir, browserRoot) {
-  const text = `# SoundFont Importer by Nora Korra
+async function writeReadme(rootDir) {
+  const text = `--------------------------------------------------
+SoundFont Importer by Nora Korra
+Version 1.0.0
+--------------------------------------------------
 
-SoundFont Importer converts \`.sf2\` SoundFont files into Ableton Live Sampler presets, making classic SoundFonts easy to use in Ableton Live.
+SoundFont Importer restores native .sf2 SoundFont importing in Ableton Live.
 
-## Requirements
+The extension converts SoundFonts into Ableton Live Sampler presets while
+preserving instrument mappings, key zones and samples.
 
-- Ableton Live with Sampler installed (included with Live Suite).
+--------------------------------------------------
+Requirements
+--------------------------------------------------
 
-## Installation & Setup
+- Ableton Live with Extensions support
+- Ableton Sampler
+- A legally obtained .sf2 SoundFont file
 
-1. In Ableton Live, open "Settings" -> "Extensions".
-2. Install the extension by dragging the \`.ablx\` file into "Drag & Drop to Install", or click "Choose File" and select it.
-3. Restart Ableton Live.
-4. After restarting, the extension will automatically create the following folder:
+--------------------------------------------------
+Installation
+--------------------------------------------------
 
-   \`\`\`
-   ${browserRoot}
-   \`\`\`
+1. Download the latest .ablx file from the GitHub releases page:
 
-   On Windows, the folder is usually created here:
+   https://github.com/norakorra/soundfont-importer/releases/latest
 
-   \`\`\`
-   %APPDATA%\\Ableton\\ExtensionsData\\nora-korra.soundfont-importer\\SoundFont Imports
-   \`\`\`
+2. Open Ableton Live.
 
-5. Add the "SoundFont Imports" folder to the "Places" section of Ableton Live's Browser.
+3. Open:
 
-## Usage
+   Settings → Extensions
 
-1. Open "Import SoundFont (.sf2)".
-2. Drag and drop a \`.sf2\` file into the drop area.
-3. Click "Import".
-4. Wait for the import to finish.
-5. Your imported instruments will appear in the "SoundFont Imports" folder in Ableton Live's Browser, ready to use.
+4. Drag the .ablx file into the Extensions window, or click "Choose File".
+
+5. Restart Ableton Live after installation.
+
+--------------------------------------------------
+Importing a SoundFont
+--------------------------------------------------
+
+1. Right-click a supported track, device, clip, scene or browser location.
+
+2. Choose:
+
+   Import SoundFont (.sf2)
+
+3. Drag a .sf2 file into the importer window.
+
+4. Click Import.
+
+5. Wait for the conversion to finish.
+
+--------------------------------------------------
+Important: Add the output folder to Places
+--------------------------------------------------
+
+After a successful import, SoundFont Importer will display the folder where
+the converted presets were saved.
+
+The first time you use the extension, it is highly recommended to open that
+folder and add it to "Places" in Ableton's browser.
+
+Doing this means that all future SoundFont imports will automatically appear
+in the same location, making them immediately accessible inside Ableton Live.
+
+Recommended workflow:
+
+1. Complete your first import.
+
+2. Open the output path shown by the extension.
+
+3. Open the generated folder.
+
+4. Drag that folder into the "Places" section in Ableton.
+
+5. All future imports will automatically appear there.
+
+The actual output path is supplied dynamically by Ableton for the current
+computer and is shown after importing. It is never tied to the developer's
+username or home directory.
+
+Platform-independent User Library examples:
+
+macOS:
+~/Music/Ableton/User Library/SoundFont Imports/
+
+Windows:
+C:\\Users\\<username>\\Music\\Ableton\\User Library\\SoundFont Imports\\
+
+--------------------------------------------------
+Notes
+--------------------------------------------------
+
+- The extension does not include any SoundFonts.
+- Large SoundFonts may take time to convert.
+- Compatibility can vary depending on the SoundFont.
+- Keep the generated samples and presets together.
+- Moving or deleting the generated files can break the presets.
+
+--------------------------------------------------
+Credits
+--------------------------------------------------
+
+SoundFont Importer by Nora Korra
+
+Built using Ableton's Extensions SDK.
+
+Copyright (c) 2026 Aaron Werinussa.
+
+Released under the MIT License.
 `;
   await fsp.writeFile(path.join(rootDir, "README.txt"), text, "utf8");
 }
