@@ -1,54 +1,86 @@
-# SoundFont Converter SDK Extension
+# SoundFont Importer by Nora Korra
 
-Private source repository for Nora Korra's Ableton Live Extension that converts `.sf2` SoundFont files into Ableton Sampler presets and an Ableton-friendly sample bank.
+Convert `.sf2` SoundFonts into playable Ableton Live Sampler presets. SoundFont Importer extracts the samples, preserves the instrument mapping, and creates a browsable preset collection for Live.
 
-## Repository structure
+> This project uses Ableton's Extensions SDK, which may still change while the SDK is in beta.
 
-This repository is split into two layers:
+## Download
 
-- `extension-package`: installable Extension SDK package source. It provides the SoundFont import dialog, parses SF2 data, exports AIFF samples, and writes Ableton Sampler `.adv` presets.
-- `prototype/sf2_to_simpler_bank`: standalone offline converter. It reads SF2 RIFF data, extracts samples to WAV, and writes a structured `bank.json` manifest with presets, zones, key ranges, velocity ranges, roots, tuning, and loop data.
-- `extension-ui`: UI and SDK integration notes.
-- `package_ablx.py`: packages `extension-package` as an `.ablx` archive.
-- `smoke_convert.js`: exercises the JavaScript importer without launching Ableton Live.
+Download the ready-to-install `.ablx` file from the [latest GitHub release](https://github.com/norakorra/soundfont-converter-sdk-extension/releases/latest).
 
-The converter is the stable core. Ableton's Extension SDK can change while it is in beta, but the SF2 extraction and normalized bank manifest remain independently useful.
+You do not need to download or build the source code to install the extension.
 
-## Run the prototype
+## Requirements
+
+- Ableton Live with Extensions support
+- Ableton Sampler installed and licensed, normally included with Live Suite
+- A legally obtained `.sf2` SoundFont
+
+## Installation
+
+1. Download `SoundFont-Importer-v0.4.20.ablx` from the latest release.
+2. Open Ableton Live.
+3. Open **Settings > Extensions**.
+4. Drag the `.ablx` file onto **Drag & Drop to Install**, or use **Choose File**.
+5. Restart Ableton Live after installation.
+
+## Using the importer
+
+1. Right-click a supported track, clip, device, scene, or browser context in Live.
+2. Select **Import SoundFont (.sf2)**.
+3. Drop an `.sf2` file into the importer window.
+4. Click **Import** and wait for conversion to finish.
+5. Add the generated **SoundFont Imports** folder to Places in Live's Browser when prompted.
+
+Each usable SoundFont patch becomes an Ableton Sampler `.adv` preset. Extracted AIFF samples are kept alongside the generated collection so the presets can find their source audio.
+
+## What is preserved
+
+- Patch, bank, and program structure
+- Key and velocity zones
+- Root-key mapping
+- Original sample rate
+- Loop points and loop-enabled state
+- Multiple samples and zones per patch
+
+## Important notes
+
+- The extension does not include any SoundFonts.
+- Importing a large SoundFont can take time and use significant disk space.
+- SoundFont compatibility can vary because `.sf2` files differ in how they use generators and modulators.
+- Keep the generated samples with their presets. Moving or deleting them can make presets lose their audio references.
+- You are responsible for the licence terms of every SoundFont you convert.
+
+## Version
+
+Current extension version: **0.4.20**
+
+See [CHANGELOG.md](CHANGELOG.md) for release details.
+
+## Building from source
+
+Package the extension with Python 3:
 
 ```bash
-python3 -m sf2_to_simpler_bank /path/to/file.sf2 /path/to/output-folder
+python3 package_ablx.py extension-package SoundFont-Importer-v0.4.20.ablx
 ```
 
-From this workspace:
+The standalone converter can also extract a SoundFont to WAV files plus a normalized `bank.json` manifest:
 
 ```bash
-cd prototype
-python3 -m sf2_to_simpler_bank ~/Downloads/example.sf2 ../../outputs/example-bank
+PYTHONPATH=prototype python3 -m sf2_to_simpler_bank /path/to/file.sf2 /path/to/output-folder --pretty
 ```
 
-Output:
+Repository structure:
 
-- `samples/*.wav`
-- `bank.json`
-
-## Ableton strategy
-
-The safest implementation path is:
-
-1. Extension UI lets the user drop or select an `.sf2`.
-2. Extension runs the converter into a project-local output folder.
-3. Extension creates an Instrument Rack or preset bank in Live from `bank.json`.
-4. Each preset becomes either:
-   - a rack chain containing Simpler devices per zone, or
-   - a generated Ableton preset file if the SDK exposes a stable preset-writing API.
-
-Directly writing `.adv`/`.adg` files is possible in principle because many Ableton files are gzip-compressed XML, but it is brittle across Live versions. The manifest-first approach keeps the converter stable and the Ableton-specific layer replaceable.
-
-## Package the extension
-
-```bash
-python3 package_ablx.py extension-package SoundFont-Importer.ablx
-```
+- `extension-package`: Ableton Extensions SDK package source
+- `prototype/sf2_to_simpler_bank`: standalone Python converter
+- `package_ablx.py`: `.ablx` packaging tool
+- `smoke_convert.js`: JavaScript conversion smoke test
+- `ablx-format-notes.md`: format and SDK research notes
 
 Generated `.ablx` files and converted sample banks are intentionally excluded from version control.
+
+## Licence
+
+Copyright © 2026 Aaron Werinussa. All rights reserved. See [LICENSE.txt](LICENSE.txt).
