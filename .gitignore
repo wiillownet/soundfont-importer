@@ -1,0 +1,10 @@
+.DS_Store
+__pycache__/
+*.py[cod]
+*.ablx
+.env
+.env.*
+node_modules/
+work/
+outputs/
+*.log

@@ -1,0 +1,8 @@
+{
+  "name": "SoundFont Importer",
+  "author": "Nora Korra",
+  "entry": "dist/extension.js",
+  "version": "0.4.20",
+  "minimumApiVersion": "1.0.0",
+  "permissions": ["filesystem"]
+}
