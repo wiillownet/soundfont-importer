@@ -1,12 +1,18 @@
 # SoundFont Importer by Nora Korra
 
-Convert `.sf2` SoundFonts into playable Ableton Live Sampler presets. SoundFont Importer extracts the samples, preserves the instrument mapping, and creates a browsable preset collection for Live.
+Convert .sf2 SoundFonts into native Ableton Live Sampler presets and restore functionality removed from Ableton Live 11.
 
-> This project uses Ableton's Extensions SDK, which may still change while the SDK is in beta.
+SoundFont Importer extracts samples, preserves instrument mappings and creates a browsable preset collection inside Ableton Live.
+
+Ableton Live supported SoundFont import in older versions, but this functionality was removed in Live 11. SoundFont Importer brings native .sf2 import back through Ableton’s Extensions system.
+
+> This project uses Ableton’s Extensions SDK, which may still change while the SDK itself remains in beta.
+
+![SoundFont Importer interface](docs/images/soundfont-importer-interface.png)
 
 ## Download
 
-Download the ready-to-install `.ablx` file from the [latest GitHub release](https://github.com/norakorra/soundfont-converter-sdk-extension/releases/latest).
+Download the ready-to-install `.ablx` file from the [latest GitHub release](https://github.com/norakorra/soundfont-importer/releases/latest).
 
 You do not need to download or build the source code to install the extension.
 
@@ -18,7 +24,7 @@ You do not need to download or build the source code to install the extension.
 
 ## Installation
 
-1. Download `SoundFont-Importer-v0.4.20.ablx` from the latest release.
+1. Download `SoundFont-Importer-v1.0.0.ablx` from the latest release.
 2. Open Ableton Live.
 3. Open **Settings > Extensions**.
 4. Drag the `.ablx` file onto **Drag & Drop to Install**, or use **Choose File**.
@@ -33,6 +39,10 @@ You do not need to download or build the source code to install the extension.
 5. Add the generated **SoundFont Imports** folder to Places in Live's Browser when prompted.
 
 Each usable SoundFont patch becomes an Ableton Sampler `.adv` preset. Extracted AIFF samples are kept alongside the generated collection so the presets can find their source audio.
+
+## Why this exists
+
+Ableton Live supported direct SoundFont import in earlier versions of Sampler, but this feature disappeared in Live 11. SoundFont Importer restores that workflow by converting .sf2 files into native Sampler presets that can be browsed directly inside Ableton Live.
 
 ## What is preserved
 
@@ -53,16 +63,22 @@ Each usable SoundFont patch becomes an Ableton Sampler `.adv` preset. Extracted 
 
 ## Version
 
-Current extension version: **0.4.20**
+Current extension version: **1.0.0**
 
 See [CHANGELOG.md](CHANGELOG.md) for release details.
+
+SoundFont Importer follows semantic versioning:
+
+- `1.0.1` for bug fixes
+- `1.1.0` for new backwards-compatible features
+- `2.0.0` for major or breaking changes
 
 ## Building from source
 
 Package the extension with Python 3:
 
 ```bash
-python3 package_ablx.py extension-package SoundFont-Importer-v0.4.20.ablx
+python3 package_ablx.py extension-package SoundFont-Importer-v1.0.0.ablx
 ```
 
 The standalone converter can also extract a SoundFont to WAV files plus a normalized `bank.json` manifest:

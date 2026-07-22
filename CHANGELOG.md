@@ -1,12 +1,14 @@
 # Changelog
 
-## 0.4.20
+## 1.0.0
 
-- Added drag-and-drop SoundFont selection inside the extension dialog.
-- Converts SF2 samples to AIFF for Ableton Live.
-- Generates Ableton Sampler `.adv` presets for usable SoundFont patches.
+- First stable public release of SoundFont Importer by Nora Korra.
+- Native `.sf2` import for Ableton Live.
+- Automatic sample extraction to AIFF.
+- Instrument mapping preservation.
+- Browsable Ableton Live Sampler preset collection.
 - Preserves key ranges, velocity ranges, root notes, sample rates, and loop data.
-- Creates a dedicated SoundFont Imports collection for Live's Browser.
-- Added localized English and Dutch interface text.
-- Added conversion progress, completion details, and user-facing error dialogs.
+- Built with Ableton’s Extensions SDK.
+- Localized English and Dutch interface text.
+- Conversion progress, completion details, and user-facing error dialogs.
 - Supports macOS and Windows paths through the Ableton Extension host.
