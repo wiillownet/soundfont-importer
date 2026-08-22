@@ -698,6 +698,136 @@ function records(buffer, size, parser) {
   return items;
 }
 
+// SF2 2.04 generator enumerators (spec section 8.1.2). Only the generators this
+// converter actually reads are named here.
+const GEN = {
+  initialFilterFc: 8,      // filter cutoff, absolute cents
+  initialFilterQ: 9,       // filter resonance, centibels
+  pan: 17,                 // -500 hard left .. +500 hard right, units of 0.1%
+  delayVolEnv: 33,         // timecents
+  attackVolEnv: 34,        // timecents
+  holdVolEnv: 35,          // timecents
+  decayVolEnv: 36,         // timecents
+  sustainVolEnv: 37,       // centibels of attenuation below full
+  releaseVolEnv: 38,       // timecents
+  instrument: 41,          // index into INST
+  keyRange: 43,            // packed lo/hi bytes
+  velRange: 44,            // packed lo/hi bytes
+  initialAttenuation: 48,  // centibels
+  coarseTune: 51,          // semitones
+  fineTune: 52,            // cents
+  sampleID: 53,            // index into SHDR
+  sampleModes: 54,         // bit 0 = loop, value 3 = loop until release
+  scaleTuning: 56,         // 100 = normal, 0 = fixed pitch
+  exclusiveClass: 57,      // voice-stealing group
+  overridingRootKey: 58,   // MIDI note, 255/absent = use the sample's original pitch
+};
+
+// SF2 2.04 section 8.1.3 default generator values. These matter for the preset-level
+// merge: a preset offset applies on top of the SF2 default when the instrument zone
+// does not set the generator at all, not on top of zero.
+const GEN_DEFAULTS = {
+  [GEN.initialFilterFc]: 13500,   // ~19.9 kHz, i.e. effectively open
+  [GEN.initialFilterQ]: 0,
+  [GEN.pan]: 0,
+  [GEN.delayVolEnv]: -12000,
+  [GEN.attackVolEnv]: -12000,
+  [GEN.holdVolEnv]: -12000,
+  [GEN.decayVolEnv]: -12000,
+  [GEN.sustainVolEnv]: 0,         // 0 cB of attenuation = full level
+  [GEN.releaseVolEnv]: -12000,
+  [GEN.initialAttenuation]: 0,
+  [GEN.coarseTune]: 0,
+  [GEN.fineTune]: 0,
+  [GEN.sampleModes]: 0,
+  [GEN.scaleTuning]: 100,
+  [GEN.overridingRootKey]: -1,    // sentinel for "absent", distinct from any MIDI note
+};
+
+// Generators whose 16-bit amount is NOT a signed value: two packed byte ranges and
+// two unsigned table indices. Every other generator is read as signed. The spec's
+// nominally unsigned value generators (initialAttenuation, sustainVolEnv,
+// scaleTuning, initialFilterQ) top out at 1440, so reinterpreting them as signed is
+// the identity, while preset-level offsets for those same generators are genuinely
+// allowed to be negative -- so signed is the correct reading at both levels.
+const RAW_GENERATORS = new Set([GEN.instrument, GEN.keyRange, GEN.velRange, GEN.sampleID]);
+
+// SF2 2.04 section 8.1.3 permitted ranges. The spec requires the summed preset +
+// instrument value to be limited to these, and real soundfonts genuinely overflow
+// them: Touhou.sf2 sums to initialAttenuation -419 cB across 9059 zones, which read
+// literally is a 123x gain boost rather than the intended unity.
+//
+// overridingRootKey and sampleModes are deliberately absent: the first uses -1 as an
+// "absent" sentinel that clamping to 0..127 would destroy, and the second is a
+// bitfield that is instrument-level only, so it is never summed.
+const GEN_RANGES = {
+  [GEN.initialFilterFc]: [1500, 13500],
+  [GEN.initialFilterQ]: [0, 960],
+  [GEN.pan]: [-500, 500],
+  [GEN.delayVolEnv]: [-12000, 5000],
+  [GEN.attackVolEnv]: [-12000, 8000],
+  [GEN.holdVolEnv]: [-12000, 5000],
+  [GEN.decayVolEnv]: [-12000, 8000],
+  [GEN.sustainVolEnv]: [0, 1440],
+  [GEN.releaseVolEnv]: [-12000, 8000],
+  [GEN.initialAttenuation]: [0, 1440],
+  [GEN.coarseTune]: [-120, 120],
+  [GEN.fineTune]: [-99, 99],
+  [GEN.scaleTuning]: [0, 1200],
+};
+
+// Generators that carry no meaning in a preset zone (SF2 2.04 section 8.1.2). They
+// must be ignored there rather than added as offsets.
+const PRESET_INVALID_GENERATORS = new Set([
+  GEN.sampleID,
+  GEN.instrument,
+  GEN.overridingRootKey,
+  GEN.sampleModes,
+  GEN.exclusiveClass,
+]);
+
+// Several generators are signed 16-bit stored in an unsigned field. Reinterpret the
+// bits, matching _signed_amount in prototype/sf2_to_simpler_bank/sf2.py.
+function signedAmount(amount) {
+  return (amount & 0xffff) << 16 >> 16;
+}
+
+// SF2 2.04 section 9.4. Generator resolution uses two different rules that are easy
+// to conflate, and the old code applied the wrong one at preset level:
+//
+//   Instrument level is ABSOLUTE. The instrument's global zone supplies defaults and
+//   a zone's own generator replaces that value outright.
+//
+//   Preset level is ADDITIVE. The resolved preset value is an offset *added* to the
+//   resolved instrument value; it never replaces it. A preset zone with fineTune=10
+//   over an instrument zone with fineTune=-5 yields 5, not 10.
+//
+// Both `presetGens` and `instrumentGens` arrive already flattened against their own
+// global zone by the caller, which is the absolute-override half of the rule.
+//
+// Two exceptions, both from the spec:
+//   - keyRange and velRange intersect rather than add, and are handled by the caller.
+//   - the generators in PRESET_INVALID_GENERATORS are ignored at preset level.
+//
+// Finally the summed value is limited to the generator's permitted range, which the
+// spec requires and which malformed-but-common soundfonts rely on to stay sane.
+function resolveZoneGenerators(presetGens, instrumentGens) {
+  const resolved = { ...GEN_DEFAULTS };
+  for (const [key, amount] of Object.entries(instrumentGens)) {
+    const op = Number(key);
+    resolved[op] = RAW_GENERATORS.has(op) ? amount : signedAmount(amount);
+  }
+  for (const [key, amount] of Object.entries(presetGens)) {
+    const op = Number(key);
+    if (RAW_GENERATORS.has(op) || PRESET_INVALID_GENERATORS.has(op)) continue;
+    resolved[op] = (resolved[op] ?? 0) + signedAmount(amount);
+  }
+  for (const [op, [low, high]] of Object.entries(GEN_RANGES)) {
+    if (resolved[op] !== undefined) resolved[op] = Math.min(high, Math.max(low, resolved[op]));
+  }
+  return resolved;
+}
+
 function buildPresets(pdta, samples) {
   const phdr = records(pdta.phdr, 38, (item) => ({ name: sfName(item.subarray(0, 20)), program: item.readUInt16LE(20), bank: item.readUInt16LE(22), bag_index: item.readUInt16LE(24) }));
   const pbag = records(pdta.pbag, 4, (item) => ({ gen_index: item.readUInt16LE(0) }));
@@ -705,31 +835,37 @@ function buildPresets(pdta, samples) {
   const inst = records(pdta.inst, 22, (item) => ({ name: sfName(item.subarray(0, 20)), bag_index: item.readUInt16LE(20) }));
   const ibag = records(pdta.ibag, 4, (item) => ({ gen_index: item.readUInt16LE(0) }));
   const igen = records(pdta.igen, 4, (item) => ({ op: item.readUInt16LE(0), amount: item.readUInt16LE(2) }));
+  // A leading zone with no sampleID (instrument level) or no instrument (preset level)
+  // is that layer's global zone: it supplies defaults that a real zone overrides
+  // absolutely. Flattening it here is the absolute half of the SF2 merge rule;
+  // resolveZoneGenerators applies the additive half across the two layers.
   const instruments = inst.slice(0, -1).map((instrument, index) => {
     const rawZones = zonesFromBags(ibag, igen, instrument.bag_index, inst[index + 1].bag_index);
-    const globalGens = rawZones[0] && rawZones[0].gens[53] === undefined ? rawZones[0].gens : {};
+    const globalGens = rawZones[0] && rawZones[0].gens[GEN.sampleID] === undefined ? rawZones[0].gens : {};
     const zones = rawZones
-      .filter((zone) => zone.gens[53] !== undefined)
+      .filter((zone) => zone.gens[GEN.sampleID] !== undefined)
       .map((zone) => ({ gens: { ...globalGens, ...zone.gens } }));
     return { name: instrument.name, zones };
   });
   return phdr.slice(0, -1).map((preset, index) => {
     const rawPresetZones = zonesFromBags(pbag, pgen, preset.bag_index, phdr[index + 1].bag_index);
-    const presetGlobalGens = rawPresetZones[0] && rawPresetZones[0].gens[41] === undefined ? rawPresetZones[0].gens : {};
+    const presetGlobalGens = rawPresetZones[0] && rawPresetZones[0].gens[GEN.instrument] === undefined ? rawPresetZones[0].gens : {};
     const presetZones = rawPresetZones
-      .filter((zone) => zone.gens[41] !== undefined)
+      .filter((zone) => zone.gens[GEN.instrument] !== undefined)
       .map((zone) => ({ gens: { ...presetGlobalGens, ...zone.gens } }));
     const zones = [];
     for (const presetZone of presetZones) {
-      const instrumentId = presetZone.gens[41];
+      const instrumentId = presetZone.gens[GEN.instrument];
       if (!instruments[instrumentId]) continue;
       for (const instrumentZone of instruments[instrumentId].zones) {
-        if (instrumentZone.gens[53] === undefined) continue;
-        const sampleIndex = instrumentZone.gens[53];
+        if (instrumentZone.gens[GEN.sampleID] === undefined) continue;
+        const sampleIndex = instrumentZone.gens[GEN.sampleID];
         const sample = samples[sampleIndex] || {};
-        const key = intersectRanges(rangeFromAmount(presetZone.gens[43]), rangeFromAmount(instrumentZone.gens[43]));
-        const vel = intersectRanges(rangeFromAmount(presetZone.gens[44]), rangeFromAmount(instrumentZone.gens[44]));
-        const root = instrumentZone.gens[58] === undefined || instrumentZone.gens[58] === 255 ? sample.original_pitch || 60 : instrumentZone.gens[58];
+        const gens = resolveZoneGenerators(presetZone.gens, instrumentZone.gens);
+        const key = intersectRanges(rangeFromAmount(presetZone.gens[GEN.keyRange]), rangeFromAmount(instrumentZone.gens[GEN.keyRange]));
+        const vel = intersectRanges(rangeFromAmount(presetZone.gens[GEN.velRange]), rangeFromAmount(instrumentZone.gens[GEN.velRange]));
+        const overridingRoot = gens[GEN.overridingRootKey];
+        const root = overridingRoot < 0 || overridingRoot === 255 ? sample.original_pitch || 60 : overridingRoot;
         zones.push({
           sample_index: sampleIndex,
           keyMin: key[0],
@@ -737,7 +873,13 @@ function buildPresets(pdta, samples) {
           velocityMin: vel[0],
           velocityMax: vel[1],
           rootKey: root,
-          loopEnabled: Boolean((instrumentZone.gens[54] || 0) & 1),
+          loopEnabled: Boolean(gens[GEN.sampleModes] & 1),
+          // The sample header's pitch_correction is a property of the recording and
+          // adds to the fineTune generator rather than replacing it. (The Python
+          // prototype substitutes instead, using pitch_correction only when fineTune
+          // is absent -- that is a prototype bug, not the spec.)
+          fineTune: gens[GEN.fineTune] + (sample.pitch_correction || 0),
+          gens,
         });
       }
     }
@@ -1228,4 +1370,4 @@ function activate(extensionHost) {
   console.log("SoundFont Importer activate() finished.");
 }
 
-module.exports = { activate, _test: { parseSoundFont, writeAiffSamples, writeSamplerPresets } };
+module.exports = { activate, _test: { parseSoundFont, writeAiffSamples, writeSamplerPresets, resolveZoneGenerators, signedAmount, GEN, GEN_DEFAULTS } };
