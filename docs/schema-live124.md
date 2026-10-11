@@ -89,6 +89,12 @@ exist in 12.4. Since samples resolve correctly today, this is the clearest proof
 handles the whole Live 10 document. **Do not touch this in Phases 1–4**; it is on the "working
 today, do not regress" list.
 
+> **Superseded (2026-10-11).** The template was re-based on Live 12.4, `<FileRef>` included (see
+> `docs/decisions.md`). The 12.4 form writes `RelativePathType 6` with a "/"-joined `RelativePath`
+> including the file name, plus the absolute `Path`. Live 12.4.6 writes the same form for User
+> Library samples. Also, the upgrade path does *not* handle the whole Live 10 document: it drops
+> the device-level volume, envelope and voice values (see §5 and the decision).
+
 ## 4. Per-zone `<MultiSamplePart>` fields
 
 Element order in 12.4 is unchanged from the template. The open element gains one attribute:

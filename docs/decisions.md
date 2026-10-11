@@ -6,6 +6,25 @@
 
 # Decisions
 
+## [2026-10-11] The 12.4 template reproduces what Live plays today, not what the old template wrote
+**Decision:** The Live 12.4 template uses the device values Live 12.4 actually applies when it
+loads a preset from the old Live 10 template: volume -12 dB, Vol<Vel 35%, attack 0.1 ms,
+decay 600 ms, sustain full, release 50 ms, 6 voices (`NumVoices` index 5), interpolation 1,
+filter off. The re-base commit changes the file format and nothing audible.
+
+**Reason:** Re-saving an old-template preset from Live 12.4.6 showed that the upgrade path
+ignores the Live 10 `<Volume>`, `<Envelope>` and `<VoiceSettings>` values entirely and falls
+back to defaults. Shipped presets have therefore always played at -12 dB with velocity
+sensitivity, not at the unity gain and 16 voices the old template wrote. A first draft of the
+re-base copied the old template's values and came out 12 dB louder with no velocity response,
+which the A/B in Live caught.
+
+**Alternatives considered:** Keep the old template's intended values (0 dB, Vol<Vel 0%).
+Rejected for this commit: it is an audible change for every existing user, made as a side
+effect of a format change. Whether the device volume and velocity curve should follow SF2
+(which applies a default velocity-to-attenuation modulator) belongs in its own fidelity
+change.
+
 ## [2026-08-22] Re-base the `.adv` template on the Live 12.4 schema
 **Decision:** Replace the hand-written Live 10 template in `samplerPresetXml` with one
 derived from Live 12.4's own default Sampler preset. Accepted cost: the working
