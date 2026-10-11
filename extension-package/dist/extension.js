@@ -704,6 +704,11 @@ function records(buffer, size, parser) {
 // SF2 2.04 generator enumerators (spec section 8.1.2). Only the generators this
 // converter actually reads are named here.
 const GEN = {
+  startAddrsOffset: 0,           // sample frames added to the sample start
+  endAddrsOffset: 1,             // ... to the sample end
+  startloopAddrsOffset: 2,       // ... to the loop start
+  endloopAddrsOffset: 3,         // ... to the loop end
+  startAddrsCoarseOffset: 4,     // units of 32768 frames, added to the sample start
   initialFilterFc: 8,      // filter cutoff, absolute cents
   initialFilterQ: 9,       // filter resonance, centibels
   pan: 17,                 // -500 hard left .. +500 hard right, units of 0.1%
@@ -713,13 +718,16 @@ const GEN = {
   decayVolEnv: 36,         // timecents
   sustainVolEnv: 37,       // centibels of attenuation below full
   releaseVolEnv: 38,       // timecents
+  endAddrsCoarseOffset: 12,      // units of 32768 frames, added to the sample end
   instrument: 41,          // index into INST
   keyRange: 43,            // packed lo/hi bytes
   velRange: 44,            // packed lo/hi bytes
+  startloopAddrsCoarseOffset: 45, // units of 32768 frames, added to the loop start
   initialAttenuation: 48,  // centibels
   coarseTune: 51,          // semitones
   fineTune: 52,            // cents
   sampleID: 53,            // index into SHDR
+  endloopAddrsCoarseOffset: 50,  // units of 32768 frames, added to the loop end
   sampleModes: 54,         // bit 0 = loop, value 3 = loop until release
   scaleTuning: 56,         // 100 = normal, 0 = fixed pitch
   exclusiveClass: 57,      // voice-stealing group
@@ -782,6 +790,14 @@ const GEN_RANGES = {
 // Generators that carry no meaning in a preset zone (SF2 2.04 section 8.1.2). They
 // must be ignored there rather than added as offsets.
 const PRESET_INVALID_GENERATORS = new Set([
+  GEN.startAddrsOffset,
+  GEN.endAddrsOffset,
+  GEN.startloopAddrsOffset,
+  GEN.endloopAddrsOffset,
+  GEN.startAddrsCoarseOffset,
+  GEN.endAddrsCoarseOffset,
+  GEN.startloopAddrsCoarseOffset,
+  GEN.endloopAddrsCoarseOffset,
   GEN.sampleID,
   GEN.instrument,
   GEN.overridingRootKey,
@@ -2543,15 +2559,33 @@ function presetEnvelope(zones) {
   return { envelope: chosen, approximated: envelopes.some((env) => envelopesDiffer(env, chosen)) };
 }
 
+// A zone's sample and loop bounds in frames of its AIFF, inclusive as Live stores them. The
+// sample header gives one set of loop points per sample; zones nudge them (and the sample's
+// start and end) with the address-offset generators, so two zones sharing a sample can loop
+// differently. Ignoring the offsets puts the loop seam where the waveform does not line up.
+// SF2's loop end is the first frame after the loop, hence the -1.
+function zoneSampleBounds(zone, sample) {
+  const offset = (fine, coarse) => (zone.gens[fine] || 0) + 32768 * (zone.gens[coarse] || 0);
+  const last = Math.max(0, sample.frameCount - 1);
+  const clamp = (frame) => Math.max(0, Math.min(last, frame));
+  const loopStart = (sample.loopStartFrames || 0) + offset(GEN.startloopAddrsOffset, GEN.startloopAddrsCoarseOffset);
+  const loopEnd = (sample.loopEndFrames || 0) + offset(GEN.endloopAddrsOffset, GEN.endloopAddrsCoarseOffset);
+  return {
+    sampleStart: clamp(offset(GEN.startAddrsOffset, GEN.startAddrsCoarseOffset)),
+    sampleEnd: clamp(last + offset(GEN.endAddrsOffset, GEN.endAddrsCoarseOffset)),
+    loopStart: clamp(loopStart),
+    loopEnd: clamp(loopEnd - 1),
+    loopEnabled: zone.loopEnabled && loopEnd > loopStart,
+  };
+}
+
 // Zone shape copied from a Live 12.4 factory zone with no slices or warp markers
 // (Sampler/Synth Keys/Lovely Keys.adv). RelativePathType 6 = relative to the User
 // Library, with a "/"-joined RelativePath, as Live 12 writes for User Library samples.
 function multisamplePartXml({ id, zone, params, sample, samplesDir, userLibrary }) {
   const relativePath = [...relativePathParts(userLibrary, samplesDir), sample.fileName].join("/");
   const absolutePath = path.join(samplesDir, sample.fileName).split(path.sep).join("/");
-  const loopStart = sample.loopStartFrames || 0;
-  const loopEnd = Math.max(loopStart, sample.loopEndFrames || sample.frameCount);
-  const loopMode = zone.loopEnabled && loopEnd > loopStart ? 1 : 0;
+  const bounds = zoneSampleBounds(zone, sample);
   return `					<MultiSamplePart Id="${id}" InitUpdateAreSlicesFromOnsetsEditableAfterRead="false" HasImportedSlicePoints="false" NeedsAnalysisData="false">
 						<LomId Value="0" />
 						<Name Value="${xmlEscape(sample.name)}" />
@@ -2567,9 +2601,9 @@ function multisamplePartXml({ id, zone, params, sample, samplesDir, userLibrary 
 						<Panorama Value="${params.panorama}" />
 						<Volume Value="${params.volume}" />
 						<Link Value="false" />
-						<SampleStart Value="0" />
-						<SampleEnd Value="${Math.max(0, sample.frameCount - 1)}" />
-						<SustainLoop><Start Value="${loopStart}" /><End Value="${Math.max(0, loopEnd - 1)}" /><Mode Value="${loopMode}" /><Crossfade Value="0" /><Detune Value="0" /></SustainLoop>
+						<SampleStart Value="${bounds.sampleStart}" />
+						<SampleEnd Value="${bounds.sampleEnd}" />
+						<SustainLoop><Start Value="${bounds.loopStart}" /><End Value="${bounds.loopEnd}" /><Mode Value="${bounds.loopEnabled ? 1 : 0}" /><Crossfade Value="0" /><Detune Value="0" /></SustainLoop>
 						<ReleaseLoop><Start Value="0" /><End Value="${Math.max(0, sample.frameCount - 1)}" /><Mode Value="3" /><Crossfade Value="0" /><Detune Value="0" /></ReleaseLoop>
 						<SampleRef>
 							<FileRef>
@@ -2742,4 +2776,4 @@ function activate(extensionHost) {
   console.log("SoundFont Importer activate() finished.");
 }
 
-module.exports = { activate, _test: { parseSoundFont, writeAiffSamples, writeSamplerPresets, resolveZoneGenerators, signedAmount, abletonZoneParams, ampEnvelope, presetEnvelope, successDialogHtml, GEN, GEN_DEFAULTS } };
+module.exports = { activate, _test: { parseSoundFont, writeAiffSamples, writeSamplerPresets, resolveZoneGenerators, signedAmount, abletonZoneParams, zoneSampleBounds, ampEnvelope, presetEnvelope, successDialogHtml, GEN, GEN_DEFAULTS } };

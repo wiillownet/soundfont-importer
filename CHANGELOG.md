@@ -14,6 +14,10 @@ Fork of SoundFont Importer by Nora Korra. Focus: conversion fidelity.
 - The SF2 volume envelope (attack, hold, decay, sustain, release) sets Sampler's amp envelope.
   Sampler has one envelope per device, so presets whose zones differ are approximated; the
   import dialog counts them and the log names them.
+- Fixed: loops that clicked or bumped on every cycle. Zones' loop offset generators were
+  ignored, so the loop seam landed a few samples off (421 zones in `Touhou.sf2`, e.g.
+  Clarinet). Sample start/end offsets are applied too, and none of these are read at preset
+  level, per the spec.
 
 ## 1.0.0
 

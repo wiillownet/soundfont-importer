@@ -1,7 +1,7 @@
 // Self-check for the SF2 zone -> Sampler zone mapping. Run: node test_zone_params.js
 const assert = require("node:assert");
 const { _test } = require("./extension-package/dist/extension.js");
-const { abletonZoneParams, resolveZoneGenerators, GEN } = _test;
+const { abletonZoneParams, zoneSampleBounds, resolveZoneGenerators, GEN } = _test;
 
 // A resolved zone the way buildPresets produces it.
 function zone(instrumentGens = {}, { rootKey = 60, pitchCorrection = 0 } = {}) {
@@ -101,5 +101,43 @@ assert.strictEqual(abletonZoneParams(zone({ [GEN.pan]: 250 })).panorama, 0.5);
   const v = abletonZoneParams(zone({ [GEN.initialAttenuation]: 120 })).volume;
   assert.ok(Math.abs(v - 0.2511886358) < 1e-8, `got ${v}`);
 }
+
+// Sample and loop bounds. Without offsets they follow the sample header; SF2's loop end is
+// the first frame after the loop, Live's is the last frame in it.
+const sample = { frameCount: 12000, loopStartFrames: 11036, loopEndFrames: 11336 };
+const looped = (gens) => ({ ...zone(gens), loopEnabled: true });
+assert.deepStrictEqual(zoneSampleBounds(looped(), sample), {
+  sampleStart: 0, sampleEnd: 11999, loopStart: 11036, loopEnd: 11335, loopEnabled: true,
+});
+
+// Zone-level offsets move the loop. These are Touhou's Clarinet zone 0 values, and the result
+// is the loop sforzando plays (11030..11332).
+{
+  const b = zoneSampleBounds(looped({ [GEN.startloopAddrsOffset]: signed(-6), [GEN.endloopAddrsOffset]: signed(-3) }), sample);
+  assert.deepStrictEqual([b.loopStart, b.loopEnd], [11030, 11332]);
+}
+
+// Start and end offsets trim the sample; coarse offsets count in 32768-frame units; nothing
+// can reach outside the exported audio.
+{
+  const b = zoneSampleBounds(looped({ [GEN.startAddrsOffset]: 100, [GEN.endAddrsOffset]: signed(-200) }), sample);
+  assert.deepStrictEqual([b.sampleStart, b.sampleEnd], [100, 11799]);
+  const far = zoneSampleBounds(looped({ [GEN.startAddrsOffset]: signed(-5), [GEN.endloopAddrsCoarseOffset]: 1 }), sample);
+  assert.deepStrictEqual([far.sampleStart, far.loopEnd], [0, 11999]);
+}
+
+// A loop built entirely from offsets on a sample whose header has no loop (0..0), as in
+// Touhou's "MM JZ.F" zones: the offsets apply to 0, not to the end of the sample.
+{
+  const bare = { frameCount: 216576, loopStartFrames: 0, loopEndFrames: 0 };
+  const b = zoneSampleBounds(looped({ [GEN.startloopAddrsOffset]: 15957, [GEN.startloopAddrsCoarseOffset]: 6, [GEN.endloopAddrsOffset]: 17023, [GEN.endloopAddrsCoarseOffset]: 6 }), bare);
+  assert.deepStrictEqual([b.loopStart, b.loopEnd, b.loopEnabled], [212565, 213630, true]);
+}
+
+// A loop pushed shut is switched off rather than written backwards.
+assert.strictEqual(zoneSampleBounds(looped({ [GEN.startloopAddrsOffset]: 400 }), sample).loopEnabled, false);
+
+// Address offsets are instrument-only: at preset level the spec says to ignore them.
+assert.strictEqual(resolveZoneGenerators({ [GEN.startloopAddrsOffset]: 5 }, {})[GEN.startloopAddrsOffset], undefined);
 
 console.log("zone params: all checks passed");
