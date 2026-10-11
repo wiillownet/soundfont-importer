@@ -28,3 +28,18 @@ formula looking reasonable.
 
 Conversion warns and names any preset where a non-zero `initialFilterQ` was
 discarded.
+
+## Tuning on multi-key fixed-pitch zones
+
+Live's per-zone `Detune` reaches only ±50 cents, so coarse tune and larger fine tune are moved
+into the root key instead. That trick needs the zone to track the keyboard. A fixed-pitch zone
+(`scaleTuning` 0) that covers a single key, the usual drum-kit case, is converted as a normal
+zone rooted on that key and keeps its full tuning. A fixed-pitch zone spanning *several* keys
+cannot: Live has no per-zone transpose for it, so its tuning is clamped to ±50 cents.
+
+Conversion warns and names any preset where this happens. On `Touhou.sf2` it is one preset
+("Burst Noise", 3 zones) out of 185.
+
+`scaleTuning` above 100 cents per key gets the same single-key treatment, which is exact. On a
+zone spanning several keys it is clamped to 100, the highest Live `TuneScale` value tested so far,
+and warned about. `Touhou.sf2` has 12 such zones, all single-key, so none are approximated.

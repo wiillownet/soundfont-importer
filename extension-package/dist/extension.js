@@ -1132,9 +1132,13 @@ function uniqueFileName(usedNames, desired) {
 const ADV_HEADER = '<Ableton MajorVersion="5" MinorVersion="12.0_12402" SchemaChangeCount="1" Creator="Ableton Live 12.4d1" Revision="42bc084cd8152e4fb737ef3fefd04b2bea5320e7">';
 
 function samplerPresetXml({ presetName, zones, exportedByIndex, samplesDir, userLibrary }) {
+  const params = zones.map(abletonZoneParams);
+  const lost = params.filter((p) => p.tuningLost).length;
+  if (lost) console.warn(`[soundfont-importer] "${presetName}": tuning approximated on ${lost} zone(s); Live's per-zone Detune holds +-${DETUNE_MAX_CENTS} cents and Scale 0-${TUNE_SCALE_MAX}%`);
   const sampleParts = zones.map((zone, index) => multisamplePartXml({
     id: index,
     zone,
+    params: params[index],
     sample: exportedByIndex.get(zone.sample_index),
     samplesDir,
     userLibrary,
@@ -2429,10 +2433,54 @@ ${sampleParts}
 `;
 }
 
+// Live's per-zone ranges, measured from a preset saved in Live 12.4 (docs/schema-live124.md).
+const DETUNE_MAX_CENTS = 50;
+const TUNE_SCALE_MAX = 100; // ponytail: highest value tested; raise if Live's Scale goes further
+const round10 = (value) => Number(value.toPrecision(10));
+
+// Map a resolved SF2 zone onto Sampler's per-zone RootKey/Detune/TuneScale/Panorama/Volume.
+//
+// Tuning: Detune only reaches +-50 cents, so whole keys of coarse + fine tune move the root
+// instead (raising pitch by N keys == lowering the root by N). One key is worth scaleTuning
+// cents, so the fold divides by it; at scaleTuning 0 (fixed pitch) moving the root does
+// nothing, and only what fits in Detune survives.
+//
+// Stereo: SF2 stores stereo as two linked mono samples, hard-panned by their zones' pan
+// generators. With pan mapped, mono-plus-pan reproduces the original, so samples are NOT
+// interleaved into stereo AIFFs. Doing so adds complexity for no audible gain.
+function abletonZoneParams(zone) {
+  const gens = zone.gens;
+  const sf2Scale = gens[GEN.scaleTuning];
+  let scale = Math.min(sf2Scale, TUNE_SCALE_MAX);
+  let baseRoot = zone.rootKey;
+  let tuneCents = gens[GEN.coarseTune] * 100 + zone.fineTune;
+  // A zone covering one key (typical for drum kits) only ever plays that key, so its exact
+  // SF2 pitch there can be rebuilt on a normal 100% zone rooted on it. That rescues fixed-pitch
+  // zones with tuning past +-50 cents and scaleTuning beyond what Live's Scale holds.
+  const fixedAndFar = scale === 0 && Math.abs(tuneCents) > DETUNE_MAX_CENTS;
+  const rebuilt = zone.keyMin === zone.keyMax && (fixedAndFar || sf2Scale > TUNE_SCALE_MAX);
+  if (rebuilt) {
+    tuneCents += (zone.keyMin - zone.rootKey) * sf2Scale;
+    scale = 100;
+    baseRoot = zone.keyMin;
+  }
+  const rootShift = scale > 0 ? Math.round(tuneCents / scale) : 0;
+  const rootKey = Math.max(0, Math.min(127, baseRoot - rootShift));
+  const detune = Math.round(tuneCents - (baseRoot - rootKey) * scale);
+  return {
+    rootKey,
+    detune: Math.max(-DETUNE_MAX_CENTS, Math.min(DETUNE_MAX_CENTS, detune)),
+    tuneScale: scale,
+    panorama: round10(gens[GEN.pan] / 500), // SF2 -500..500 and Live -1..1, both negative = left
+    volume: round10(10 ** (-gens[GEN.initialAttenuation] / 200)), // centibels to linear gain
+    tuningLost: Math.abs(detune) > DETUNE_MAX_CENTS || (!rebuilt && sf2Scale > TUNE_SCALE_MAX),
+  };
+}
+
 // Zone shape copied from a Live 12.4 factory zone with no slices or warp markers
 // (Sampler/Synth Keys/Lovely Keys.adv). RelativePathType 6 = relative to the User
 // Library, with a "/"-joined RelativePath, as Live 12 writes for User Library samples.
-function multisamplePartXml({ id, zone, sample, samplesDir, userLibrary }) {
+function multisamplePartXml({ id, zone, params, sample, samplesDir, userLibrary }) {
   const relativePath = [...relativePathParts(userLibrary, samplesDir), sample.fileName].join("/");
   const absolutePath = path.join(samplesDir, sample.fileName).split(path.sep).join("/");
   const loopStart = sample.loopStartFrames || 0;
@@ -2447,11 +2495,11 @@ function multisamplePartXml({ id, zone, sample, samplesDir, userLibrary }) {
 						<KeyRange><Min Value="${zone.keyMin}" /><Max Value="${zone.keyMax}" /><CrossfadeMin Value="${zone.keyMin}" /><CrossfadeMax Value="${zone.keyMax}" /></KeyRange>
 						<VelocityRange><Min Value="${Math.max(1, zone.velocityMin)}" /><Max Value="${zone.velocityMax}" /><CrossfadeMin Value="${Math.max(1, zone.velocityMin)}" /><CrossfadeMax Value="${zone.velocityMax}" /></VelocityRange>
 						<SelectorRange><Min Value="0" /><Max Value="127" /><CrossfadeMin Value="0" /><CrossfadeMax Value="127" /></SelectorRange>
-						<RootKey Value="${zone.rootKey}" />
-						<Detune Value="0" />
-						<TuneScale Value="100" />
-						<Panorama Value="0" />
-						<Volume Value="1" />
+						<RootKey Value="${params.rootKey}" />
+						<Detune Value="${params.detune}" />
+						<TuneScale Value="${params.tuneScale}" />
+						<Panorama Value="${params.panorama}" />
+						<Volume Value="${params.volume}" />
 						<Link Value="false" />
 						<SampleStart Value="0" />
 						<SampleEnd Value="${Math.max(0, sample.frameCount - 1)}" />
@@ -2628,4 +2676,4 @@ function activate(extensionHost) {
   console.log("SoundFont Importer activate() finished.");
 }
 
-module.exports = { activate, _test: { parseSoundFont, writeAiffSamples, writeSamplerPresets, resolveZoneGenerators, signedAmount, GEN, GEN_DEFAULTS } };
+module.exports = { activate, _test: { parseSoundFont, writeAiffSamples, writeSamplerPresets, resolveZoneGenerators, signedAmount, abletonZoneParams, GEN, GEN_DEFAULTS } };

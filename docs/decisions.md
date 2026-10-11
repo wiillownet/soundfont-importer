@@ -6,6 +6,24 @@
 
 # Decisions
 
+## [2026-10-11] Keep spec semantics for preset-level generators where sforzando differs
+**Decision:** Preset-level generators stay additive offsets on the instrument value, summed and
+then clamped to the SF2 range, even where Plogue sforzando (the brief's A/B reference) does
+otherwise. Do not change the converter to match sforzando on these.
+
+**Reason:** Phase 2 was cross-checked numerically against sforzando's own SF2-to-SFZ output for
+`Touhou.sf2` (its `.sfz` files state each zone's tune, pan and volume). On the 87 presets with no
+preset-level tuning, pan or volume generators, all 6103 zones match exactly in pitch and pan.
+Every remaining difference traces to how Plogue's converter treats preset-level generators,
+read from its output: it drops preset `fineTune` (written only as a `NOP` comment), lets a
+region's own `pan` override the preset's instead of adding to it, and does not clamp
+attenuation, so a preset value of -174 cB becomes a +17.4 dB boost. Each of these contradicts
+SF2 2.04 section 9.4 and the clamping decision of 2026-08-22.
+
+**Alternatives considered:** Match sforzando, so the A/B sounds identical. Rejected: it would
+copy a third-party converter's departures from the spec. The ear test should treat audible
+differences on those presets as expected, not as bugs.
+
 ## [2026-10-11] The 12.4 template reproduces what Live plays today, not what the old template wrote
 **Decision:** The Live 12.4 template uses the device values Live 12.4 actually applies when it
 loads a preset from the old Live 10 template: volume -12 dB, Vol<Vel 35%, attack 0.1 ms,

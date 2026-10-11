@@ -249,11 +249,16 @@ lossless relative to today (today writes no filter at all).
 
 | Question | Status |
 |---|---|
-| `Detune` true bounds | Observed ±31 over 380 zones. Live's UI is documented as ±50 cents but that is **not** confirmed from data. Clamp conservatively to ±50 and confirm by ear in Phase 2. |
-| `Panorama` bounds | Always 0 in factory content. Device-level `Panorama` is `−1 … 1`, so the brief's `pan/500` → −1…1 is *consistent*, but the per-zone field itself is unconfirmed. |
-| `TuneScale` bounds | Always 100 in factory content. Mapping `scaleTuning` onto it is unvalidated. |
+| `Detune` true bounds | **Resolved (2026-10-11):** integer cents, `-50 … 50`. A preset saved from Live 12.4 with the UI dragged to both ends stored `50` and `-50`. |
+| `Panorama` bounds | **Resolved (2026-10-11):** `-1 … 1`, negative = left. Live's 50L and 50R stored `-1` and `1`, so `pan / 500` keeps SF2's sign. |
+| `TuneScale` bounds | **Partly resolved (2026-10-11):** a percentage, `0` = fixed pitch (Live's 0 % stored `0`). Values above 100 untested; the converter clamps to 100. |
 | Filter resonance mapping | Blocked, see §7. |
-| Live 12.4 load test | Not performed. Needs the GUI. |
+| Live 12.4 load test | **Done (2026-10-11):** the re-based template loads in Live 12.4.6 with all zones and samples resolved. |
+
+The reference preset is `reference/live124-sampler.adv` (gitignored; saved by the repo owner from
+Live 12.4.6). It also confirms §5 and §6: zone `Volume` -12 dB stored `0.2511886358`, envelope times
+in ms (`200`, `1000`, `2000`), `SustainLevel` -10 dB stored `0.3162277639`, and filter `Freq` in Hz
+(`1000`).
 
 ## 9. Recommendation on the template
 
