@@ -43,3 +43,25 @@ Conversion warns and names any preset where this happens. On `Touhou.sf2` it is 
 `scaleTuning` above 100 cents per key gets the same single-key treatment, which is exact. On a
 zone spanning several keys it is clamped to 100, the highest Live `TuneScale` value tested so far,
 and warned about. `Touhou.sf2` has 12 such zones, all single-key, so none are approximated.
+
+## Amplitude envelope: one per preset, not per zone
+
+SF2 gives every zone its own volume envelope. Live's Sampler has one amp envelope for the whole
+device. The converter uses the envelope of the zone containing middle C (MIDI 60), or the most
+common envelope when no zone covers it. Zones whose envelope differs audibly from that one
+(times more than 25% apart, or sustain more than 1.5 dB apart) lose their own shape: typically a
+piano or plucked instrument whose high notes decay faster than its low ones will decay at the
+middle-C rate everywhere. Conversion warns and names each such preset, and the success dialog
+counts them. On `Touhou.sf2` that is 104 of 185 presets.
+
+Within the chosen envelope:
+
+- **Delay** (`delayVolEnv`) is dropped. Live's amp envelope has no delay stage. 230 of 11646
+  zones in `Touhou.sf2` set one.
+- **Hold** is added to the decay time, so the note still reaches its sustain level on time. The
+  level starts falling during what was the hold, rather than staying at peak.
+- **Sustain** below -70 dB, Live's floor, sits on the floor.
+- **Decay and release curves** may differ in shape: SF2 decays and releases linearly in dB, and
+  Live's curve shape was not measured. Times are matched; shapes are not verified.
+- **Release** is timed as if the note were released at full level (see `docs/decisions.md`).
+  A note released from a low sustain level fades for up to 40% longer than in the SF2.

@@ -6,6 +6,26 @@
 
 # Decisions
 
+## [2026-10-11] Amp envelope: decay scaled to sustain, release timed from full level
+**Decision:** SF2's decay and release rates (time for a 100 dB change) become Live durations
+as follows. Decay = hold + SF2 decay x (sustain depth in dB, at most 70) / 100. Release = SF2
+release x 70 / 100, regardless of sustain level. Delay is dropped. Envelopes within 25% in
+time and 1.5 dB in sustain count as the same for the per-preset warning.
+
+**Reason:** Live's manual defines decay as the time to reach the sustain level and release as
+the time to reach its -70 dB release level, while SF2 defines both as rates. Scaling decay by
+the distance travelled keeps SF2's dB-per-second rate; folding hold into decay keeps the time
+sustain is reached. For release, timing from the sustain level gives 0 ms when sustain sits at
+Live's floor, which is exactly the plucked and piano-like case, released mid-decay while still
+loud: a first draft did this and produced a 1 ms release on `BassPick&Mutes`. Timing from full
+level is never shorter than SF2 and at worst 40% longer. Unit reading was cross-checked
+against sforzando's SFZ output: all 5721 comparable zones match.
+
+**Alternatives considered:** Release from the sustain level (rejected: the click above). Hold
+dropped instead of folded (rejected: 2300 zones in `Touhou.sf2` hold over 50 ms and would
+decay early). Strict equality for the per-preset warning (rejected: 107 of 185 presets differ
+somewhere, mostly by inaudible amounts like 1 ms against 6 ms of attack).
+
 ## [2026-10-11] Keep spec semantics for preset-level generators where sforzando differs
 **Decision:** Preset-level generators stay additive offsets on the instrument value, summed and
 then clamped to the SF2 range, even where Plogue sforzando (the brief's A/B reference) does

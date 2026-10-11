@@ -11,6 +11,9 @@ Fork of SoundFont Importer by Nora Korra. Focus: conversion fidelity.
 - Per-zone tuning, pan and volume are preserved. Coarse tune moves the root key, fine tune
   and sample pitch correction go to Detune, and fixed-pitch (`scaleTuning`) zones are kept.
   See `docs/fidelity.md` for the one case that is still approximated.
+- The SF2 volume envelope (attack, hold, decay, sustain, release) sets Sampler's amp envelope.
+  Sampler has one envelope per device, so presets whose zones differ are approximated; the
+  import dialog counts them and the log names them.
 
 ## 1.0.0
 

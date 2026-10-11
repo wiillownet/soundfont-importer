@@ -395,11 +395,13 @@ function successDialogHtml(result, language) {
     title: "SoundFont import klaar!",
     hint: "Voeg de map \"SoundFont Imports\" toe aan Ableton Places voor snelle toegang tot je geconverteerde presets!",
     outputFolder: "Output map:",
+    approximated: (n) => `${n} presets gebruiken benaderde instellingen (stemming of envelope) die de Sampler van Live niet exact kan weergeven.`,
     ok: "Einde",
   } : {
     title: "SoundFont import complete!",
     hint: "Add the \"SoundFont Imports\" folder to Ableton Places for easy access to your converted presets!",
     outputFolder: "Output folder:",
+    approximated: (n) => `${n} presets use approximated settings (tuning or envelope) that Live's Sampler cannot reproduce exactly.`,
     ok: "End",
   };
   const closeScript = `window.webkit?.messageHandlers?.live?.postMessage({method:'close_and_send',params:['ok']});window.chrome?.webview?.postMessage({method:'close_and_send',params:['ok']})`;
@@ -428,6 +430,7 @@ function successDialogHtml(result, language) {
   <div class="content">
     <h1>${htmlEscape(labels.title)}</h1>
     <p class="stats">${stats}</p>
+    ${result.approximatedCount ? `<p class="hint">${htmlEscape(labels.approximated(result.approximatedCount))}</p>` : ""}
     <p class="hint">${htmlEscape(labels.hint)}</p>
     <p class="hint label">${htmlEscape(labels.outputFolder)}</p>
     <div class="path">${rootDir}</div>
@@ -972,6 +975,7 @@ async function writeAiffSamples(sf2, samplesDir) {
 async function writeSamplerPresets(sf2, exported, presetsDir, samplesDir, userLibrary) {
   const exportedByIndex = new Map(exported.map((sample) => [sample.index, sample]));
   const usedPresetNames = new Set();
+  const approximated = [];
   let presetCount = 0;
   let zoneCount = 0;
   for (const preset of sf2.presets) {
@@ -984,12 +988,13 @@ async function writeSamplerPresets(sf2, exported, presetsDir, samplesDir, userLi
       exportedByIndex,
       samplesDir,
       userLibrary,
+      approximated,
     });
     await fsp.writeFile(path.join(presetsDir, fileName), zlib.gzipSync(Buffer.from(xml, "utf8"), { level: 9 }));
     presetCount++;
     zoneCount += zones.length;
   }
-  return { presetCount, sampleCount: exported.length, zoneCount, presetsDir, samplesDir };
+  return { presetCount, sampleCount: exported.length, zoneCount, approximatedCount: approximated.length, presetsDir, samplesDir };
 }
 
 async function writeImportReadme(rootDir) {
@@ -1131,10 +1136,17 @@ function uniqueFileName(usedNames, desired) {
 // and an empty LastPresetRef. See docs/decisions.md and docs/schema-live124.md before changing it.
 const ADV_HEADER = '<Ableton MajorVersion="5" MinorVersion="12.0_12402" SchemaChangeCount="1" Creator="Ableton Live 12.4d1" Revision="42bc084cd8152e4fb737ef3fefd04b2bea5320e7">';
 
-function samplerPresetXml({ presetName, zones, exportedByIndex, samplesDir, userLibrary }) {
+function samplerPresetXml({ presetName, zones, exportedByIndex, samplesDir, userLibrary, approximated }) {
   const params = zones.map(abletonZoneParams);
+  const { envelope, approximated: envelopeApproximated } = presetEnvelope(zones);
   const lost = params.filter((p) => p.tuningLost).length;
-  if (lost) console.warn(`[soundfont-importer] "${presetName}": tuning approximated on ${lost} zone(s); Live's per-zone Detune holds +-${DETUNE_MAX_CENTS} cents and Scale 0-${TUNE_SCALE_MAX}%`);
+  const reasons = [];
+  if (lost) reasons.push(`tuning on ${lost} zone(s) (Live's per-zone Detune holds +-${DETUNE_MAX_CENTS} cents, Scale 0-${TUNE_SCALE_MAX}%)`);
+  if (envelopeApproximated) reasons.push("amp envelope (zones differ; Live's Sampler has one envelope per device)");
+  if (reasons.length) {
+    console.warn(`[soundfont-importer] "${presetName}" approximated: ${reasons.join("; ")}`);
+    approximated.push(presetName);
+  }
   const sampleParts = zones.map((zone, index) => multisamplePartXml({
     id: index,
     zone,
@@ -1915,7 +1927,7 @@ ${sampleParts}
 			<Envelope>
 				<AttackTime>
 					<LomId Value="0" />
-					<Manual Value="0.1000000015" />
+					<Manual Value="${envelope.attack}" />
 					<MidiControllerRange>
 						<Min Value="0.1000000015" />
 						<Max Value="20000" />
@@ -1957,7 +1969,7 @@ ${sampleParts}
 				</AttackSlope>
 				<DecayTime>
 					<LomId Value="0" />
-					<Manual Value="600" />
+					<Manual Value="${envelope.decay}" />
 					<MidiControllerRange>
 						<Min Value="1" />
 						<Max Value="60000" />
@@ -1999,7 +2011,7 @@ ${sampleParts}
 				</DecaySlope>
 				<SustainLevel>
 					<LomId Value="0" />
-					<Manual Value="1" />
+					<Manual Value="${envelope.sustain}" />
 					<MidiControllerRange>
 						<Min Value="0.0003162277571" />
 						<Max Value="1" />
@@ -2013,7 +2025,7 @@ ${sampleParts}
 				</SustainLevel>
 				<ReleaseTime>
 					<LomId Value="0" />
-					<Manual Value="50" />
+					<Manual Value="${envelope.release}" />
 					<MidiControllerRange>
 						<Min Value="1" />
 						<Max Value="60000" />
@@ -2477,6 +2489,60 @@ function abletonZoneParams(zone) {
   };
 }
 
+// Live's amp envelope ranges (ms, linear level), from its default Sampler preset.
+const ENV_FLOOR_DB = 70; // SustainLevel's minimum, 0.0003162277571, is -70 dB
+const ENV_LIMITS = { attack: [0.1, 20000], decay: [1, 60000], release: [1, 60000] };
+const clampEnv = (name, ms) => round10(Math.max(ENV_LIMITS[name][0], Math.min(ENV_LIMITS[name][1], ms)));
+
+// Map one zone's SF2 volume envelope onto Sampler's (device-wide) amp envelope.
+//
+// SF2 decay and release are rates: the time a 100 dB change would take. Live's are durations:
+// decay runs from peak to the sustain level, release to its -70 dB floor. Decay is scaled by the
+// distance to sustain, keeping SF2's dB-per-second rate. Release is timed from full level, not
+// from sustain: plucked and piano-like sounds sustain near silence and are released mid-decay,
+// so timing it from the sustain level would cut them off in ~1 ms. Live has no hold
+// stage: hold is added to decay, so the note still reaches its sustain level on time. Live has
+// no delay stage either; delayVolEnv is dropped (docs/fidelity.md).
+function ampEnvelope(zone) {
+  const gens = zone.gens;
+  const ms = (op) => 1000 * 2 ** (gens[op] / 1200);
+  const sustainDb = Math.min(gens[GEN.sustainVolEnv] / 10, ENV_FLOOR_DB);
+  return {
+    attack: clampEnv("attack", ms(GEN.attackVolEnv)),
+    decay: clampEnv("decay", ms(GEN.holdVolEnv) + ms(GEN.decayVolEnv) * sustainDb / 100),
+    sustain: round10(10 ** (-sustainDb / 20)),
+    release: clampEnv("release", ms(GEN.releaseVolEnv) * ENV_FLOOR_DB / 100),
+  };
+}
+
+// Differences below these are inaudible and not worth a warning.
+const ENV_TIME_TOLERANCE = 1.25; // ratio
+const ENV_SUSTAIN_TOLERANCE_DB = 1.5;
+function envelopesDiffer(a, b) {
+  const timeOff = (x, y) => Math.max(x, y) / Math.min(x, y) > ENV_TIME_TOLERANCE;
+  const db = (level) => 20 * Math.log10(level);
+  return timeOff(a.attack, b.attack) || timeOff(a.decay, b.decay) || timeOff(a.release, b.release)
+    || Math.abs(db(a.sustain) - db(b.sustain)) > ENV_SUSTAIN_TOLERANCE_DB;
+}
+
+// SF2 has an envelope per zone, Sampler one per device. Use the zone that plays middle C
+// (most likely to be played and auditioned), else the most common envelope, and report
+// whether any zone differs audibly from the one chosen.
+function presetEnvelope(zones) {
+  const envelopes = zones.map(ampEnvelope);
+  const middleC = zones.findIndex((zone) => zone.keyMin <= 60 && 60 <= zone.keyMax);
+  let chosen = envelopes[middleC];
+  if (!chosen) {
+    const counts = new Map();
+    for (const env of envelopes) {
+      const key = JSON.stringify(env);
+      counts.set(key, (counts.get(key) || 0) + 1);
+    }
+    chosen = JSON.parse([...counts].sort((a, b) => b[1] - a[1])[0][0]);
+  }
+  return { envelope: chosen, approximated: envelopes.some((env) => envelopesDiffer(env, chosen)) };
+}
+
 // Zone shape copied from a Live 12.4 factory zone with no slices or warp markers
 // (Sampler/Synth Keys/Lovely Keys.adv). RelativePathType 6 = relative to the User
 // Library, with a "/"-joined RelativePath, as Live 12 writes for User Library samples.
@@ -2676,4 +2742,4 @@ function activate(extensionHost) {
   console.log("SoundFont Importer activate() finished.");
 }
 
-module.exports = { activate, _test: { parseSoundFont, writeAiffSamples, writeSamplerPresets, resolveZoneGenerators, signedAmount, abletonZoneParams, GEN, GEN_DEFAULTS } };
+module.exports = { activate, _test: { parseSoundFont, writeAiffSamples, writeSamplerPresets, resolveZoneGenerators, signedAmount, abletonZoneParams, ampEnvelope, presetEnvelope, successDialogHtml, GEN, GEN_DEFAULTS } };
