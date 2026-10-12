@@ -61,7 +61,11 @@ Within the chosen envelope:
 - **Hold** is added to the decay time, so the note still reaches its sustain level on time. The
   level starts falling during what was the hold, rather than staying at peak.
 - **Sustain** below -70 dB, Live's floor, sits on the floor.
-- **Decay and release curves** may differ in shape: SF2 decays and releases linearly in dB, and
-  Live's curve shape was not measured. Times are matched; shapes are not verified.
+- **Decay and release curves** may differ in shape: SF2 decays and releases linearly in dB.
+  Measured on renders from Live 12.4.6 (Decay and Release Slope at Live's default of 1), Live
+  falls about 20% faster than the nominal rate over the first 35 dB. `BassPick&Mutes` at C3
+  decays 12 dB/s where SF2 asks for 10, and releases about 118 dB/s where SF2 asks for 100.
+  Not separated from the sample's own decay; a steady looped sample would isolate Live's curve.
+  `Bright_Yamaha_Grand` at C5 stays within 1.5 dB of sforzando throughout decay and release.
 - **Release** is timed as if the note were released at full level (see `docs/decisions.md`).
   A note released from a low sustain level fades for up to 40% longer than in the SF2.
