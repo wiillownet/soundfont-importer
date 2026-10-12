@@ -6,6 +6,32 @@
 
 # Decisions
 
+## [2026-10-12] Calibrate decay and release to Live's measured curves; Vol<Vel 50%
+**Decision:** Supersedes the decay and release formulas of "Amp envelope: decay scaled to
+sustain, release timed from full level" below (hold folding, delay and the warning tolerances
+stand). Decay = hold + the Live decay time that has fallen 75% of the way to sustain (in dB)
+when SF2 has. Release = SF2 release x 83.6 / 100, still timed from full level. Live's default
+curves (Slope 1) are kept. Sampler's Vol<Vel is 50% instead of Live's default 35%; device
+volume stays at Live's default -12 dB.
+
+**Reason:** Renders of a steady looped Clarinet in Live 12.4 showed the old reading of Live's
+manual was wrong. Live's decay is exponential in amplitude toward sustain (time constant =
+decay time / 9.62), so it falls 83.6 dB per decay time toward silence, linear in dB like SF2,
+but flattens near a higher sustain: the old "distance to sustain" scaling decayed 3.8x too fast
+at a -10 dB sustain. Decay Slopes 0.5 and 0 sag and then drop off a cliff, unlike SF2. The 75%
+match is within 3% of a least-squares fit at every sustain level and was verified by render to
+0.2 dB. Live's release falls linearly in dB to about -83.6 dB in the release time wherever it
+starts, so timing it from full level is exact for a note released at full level and slower from
+a held sustain (24% at -20 dB); timing it from sustain would still cut plucks short (see below).
+For velocity, sforzando follows SF2's default velocity-to-attenuation curve (40 log10(127/v)
+dB) to 0.1 dB; Live's Vol<Vel is linear in dB (0.4 dB per velocity step at 100%), so no
+setting matches everywhere. 50% stays within 1.4 dB from velocity 48 to 127, where 35% is up
+to 5.9 dB off. Device volume is left at -12 dB as headroom; SF2 says nothing about it.
+
+**Alternatives considered:** A flat 1.19x on the old formulas (rejected: right only for sustain
+at the floor). Release from the sustain level (rejected: plucks). Vol<Vel fitted down to
+velocity 16 (64%, rejected: up to 4 dB too quiet in the 64 to 112 range that matters most).
+
 ## [2026-10-11] Map the filter's modulation-envelope sweep, not just the cutoff
 **Decision:** Phase 4 maps `modEnvToFilterFc` and the SF2 modulation envelope onto Sampler's
 filter envelope (`Amount` in semitones, ADSR converted like the amp envelope), going beyond the

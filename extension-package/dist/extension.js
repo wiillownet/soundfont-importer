@@ -1868,7 +1868,7 @@ ${sampleParts}
 			</Volume>
 			<VolumeVelScale>
 				<LomId Value="0" />
-				<Manual Value="0.349999994" />
+				<Manual Value="0.5" />
 				<MidiControllerRange>
 					<Min Value="0" />
 					<Max Value="1" />
@@ -2536,22 +2536,34 @@ const clampEnv = (name, ms) => round10(Math.max(ENV_LIMITS[name][0], Math.min(EN
 
 // Map one zone's SF2 volume envelope onto Sampler's (device-wide) amp envelope.
 //
-// SF2 decay and release are rates: the time a 100 dB change would take. Live's are durations:
-// decay runs from peak to the sustain level, release to its -70 dB floor. Decay is scaled by the
-// distance to sustain, keeping SF2's dB-per-second rate. Release is timed from full level, not
-// from sustain: plucked and piano-like sounds sustain near silence and are released mid-decay,
-// so timing it from the sustain level would cut them off in ~1 ms. Live has no hold
-// stage: hold is added to decay, so the note still reaches its sustain level on time. Live has
-// no delay stage either; delayVolEnv is dropped (docs/fidelity.md).
+// SF2 decay and release are rates: the time a 100 dB fall would take, linear in dB. Measured on
+// Live 12.4 renders at the default Slope of 1 (docs/fidelity.md): Live's decay is exponential in
+// amplitude toward the sustain level, with a time constant of the decay time / 9.62, so toward
+// silence it falls 83.6 dB per decay time, linear in dB. It flattens out as it nears a higher
+// sustain; its time is chosen so it has fallen 75% of the way (in dB) when SF2 has, within 3% of
+// a least-squares fit. Live's release falls linearly in dB to about -83.6 dB in the release time,
+// wherever it starts. Release is timed from full level (SF2 time x 83.6 / 100), not from sustain:
+// plucked and piano-like sounds sustain near silence and are released mid-decay, so timing it
+// from the sustain level would cut them short. Released from a held sustain, it runs slower.
+// Live has no hold stage: hold is added to decay. Live has no delay stage either; delayVolEnv
+// is dropped (docs/fidelity.md).
+const LIVE_STAGE_DB = 83.6; // dB a Slope-1 stage aimed at silence falls per stage time
+function liveDecayMs(sf2Ms, sustainDb) {
+  if (sustainDb <= 0) return 0;
+  const k = LIVE_STAGE_DB / (20 * Math.LOG10E); // stage time / time constant
+  const s = 10 ** (-sustainDb / 20);
+  const x = -Math.log((10 ** (-0.75 * sustainDb / 20) - s) / (1 - s)); // time constants to 75%
+  return k * (sf2Ms * 0.75 * sustainDb / 100) / x;
+}
 function ampEnvelope(zone) {
   const gens = zone.gens;
   const ms = (op) => 1000 * 2 ** (gens[op] / 1200);
   const sustainDb = Math.min(gens[GEN.sustainVolEnv] / 10, ENV_FLOOR_DB);
   return {
     attack: clampEnv("attack", ms(GEN.attackVolEnv)),
-    decay: clampEnv("decay", ms(GEN.holdVolEnv) + ms(GEN.decayVolEnv) * sustainDb / 100),
+    decay: clampEnv("decay", ms(GEN.holdVolEnv) + liveDecayMs(ms(GEN.decayVolEnv), sustainDb)),
     sustain: round10(10 ** (-sustainDb / 20)),
-    release: clampEnv("release", ms(GEN.releaseVolEnv) * ENV_FLOOR_DB / 100),
+    release: clampEnv("release", ms(GEN.releaseVolEnv) * LIVE_STAGE_DB / 100),
   };
 }
 

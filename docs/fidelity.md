@@ -87,11 +87,19 @@ Within the chosen envelope:
 - **Hold** is added to the decay time, so the note still reaches its sustain level on time. The
   level starts falling during what was the hold, rather than staying at peak.
 - **Sustain** below -70 dB, Live's floor, sits on the floor.
-- **Decay and release curves** may differ in shape: SF2 decays and releases linearly in dB.
-  Measured on renders from Live 12.4.6 (Decay and Release Slope at Live's default of 1), Live
-  falls about 20% faster than the nominal rate over the first 35 dB. `BassPick&Mutes` at C3
-  decays 12 dB/s where SF2 asks for 10, and releases about 118 dB/s where SF2 asks for 100.
-  Not separated from the sample's own decay; a steady looped sample would isolate Live's curve.
-  `Bright_Yamaha_Grand` at C5 stays within 1.5 dB of sforzando throughout decay and release.
+- **Decay curve.** SF2 decays linearly in dB to the sustain level. Live's decay (at its default
+  Slope of 1) is exponential in amplitude toward sustain: linear in dB toward silence, but it
+  flattens as it nears a higher sustain. The decay time is set so Live has fallen 75% of the way
+  (in dB) when SF2 has, typically within 1.5 dB of SF2 over the stage. Measured on Live 12.4
+  renders of a steady looped `Clarinet`: 83.6 dB per decay time toward silence, verified to
+  0.2 dB against the model with a -20 dB sustain.
 - **Release** is timed as if the note were released at full level (see `docs/decisions.md`).
-  A note released from a low sustain level fades for up to 40% longer than in the SF2.
+  Live's release reaches about -83.6 dB in the release time wherever it starts, so a note
+  released from a held sustain fades slower than in the SF2: 24% longer from -20 dB.
+
+## Velocity
+
+SF2's default modulator attenuates soft notes by 40 log10(127/velocity) dB, a curve sforzando
+follows to 0.1 dB. Live's Vol<Vel is linear in dB, so it cannot match everywhere. Presets use
+50%: within 1.4 dB of SF2 from velocity 48 to 127. Below that Live stays louder (velocity 32:
+-19 dB against SF2's -24; velocity 16: -22 against -36). Device volume is Live's default -12 dB.

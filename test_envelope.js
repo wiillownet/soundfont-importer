@@ -16,31 +16,35 @@ assert.deepStrictEqual(ampEnvelope(zone()), { attack: 0.9765625, decay: 1, susta
 near(ampEnvelope(zone({ [GEN.attackVolEnv]: 0 })).attack, 1000, "attack 1 s");
 near(ampEnvelope(zone({ [GEN.attackVolEnv]: 8000 })).attack, 20000, "attack clamp");
 
-// Decay is a rate in SF2 (time for 100 dB) and a duration in Live (time to reach sustain):
-// a 2 s SF2 decay falling only 20 dB gets there in 0.4 s. Hold (~1 ms by default) adds on.
+// Decay is a rate in SF2 (time for 100 dB, linear in dB) and Live's decay curves toward the
+// sustain level. A 5 s SF2 decay to -20 dB gets there in 1 s; Live's matching decay time is
+// ~2.95 s (it has fallen 15 dB, 75% of the way, at 0.75 s like SF2). Hold (~1 ms) adds on.
 {
-  const e = ampEnvelope(zone({ [GEN.decayVolEnv]: 1200, [GEN.sustainVolEnv]: 200 }));
-  near(e.decay, 400 + 1000 * 2 ** (-12000 / 1200), "scaled decay");
+  const e = ampEnvelope(zone({ [GEN.decayVolEnv]: 2786, [GEN.sustainVolEnv]: 200 }));
   near(e.sustain, 0.1, "sustain -20 dB as linear amplitude");
+  const sf2 = 1000 * 2 ** (2786 / 1200), tau = (e.decay - 1) / (83.6 / (20 * Math.LOG10E));
+  const db = 20 * Math.log10(0.1 + 0.9 * Math.exp(-0.75 * 0.2 * sf2 / tau));
+  assert.ok(Math.abs(db + 15) < 0.01, `75% of the fall on time: ${db}`);
 }
 
-// Hold is folded into decay, so sustain is still reached on time.
-near(ampEnvelope(zone({ [GEN.holdVolEnv]: 0, [GEN.decayVolEnv]: 1200, [GEN.sustainVolEnv]: 200 })).decay, 1400, "hold + decay");
+// Hold is folded into decay.
+near(ampEnvelope(zone({ [GEN.holdVolEnv]: 0, [GEN.decayVolEnv]: 1200, [GEN.sustainVolEnv]: 200 })).decay
+  - ampEnvelope(zone({ [GEN.decayVolEnv]: 1200, [GEN.sustainVolEnv]: 200 })).decay, 1000 - 1000 * 2 ** (-12000 / 1200), "hold + decay");
 
-// Release is SF2's rate over Live's 70 dB range, timed from full level: a 1 s SF2 release
-// takes 0.7 s whatever the sustain level...
-near(ampEnvelope(zone({ [GEN.releaseVolEnv]: 0 })).release, 700, "release from full");
-near(ampEnvelope(zone({ [GEN.releaseVolEnv]: 0, [GEN.sustainVolEnv]: 200 })).release, 700, "release, -20 dB sustain");
-
+// Release is timed from full level: Live falls 83.6 dB in the release time, SF2 100 dB in its
+// release time, so a 1 s SF2 release is 836 ms whatever the sustain level...
+near(ampEnvelope(zone({ [GEN.releaseVolEnv]: 0 })).release, 836, "release");
 // ...so a plucked sound that sustains at silence, and is let go mid-decay, still gets its
-// release tail instead of a 1 ms cut.
-near(ampEnvelope(zone({ [GEN.releaseVolEnv]: 0, [GEN.sustainVolEnv]: 1000 })).release, 700, "release, silent sustain");
+// release tail instead of a cut.
+near(ampEnvelope(zone({ [GEN.releaseVolEnv]: 0, [GEN.sustainVolEnv]: 1000 })).release, 836, "release, silent sustain");
 
-// Sustain below Live's floor sits on the floor; decay only travels the 70 dB Live has.
+// Sustain below Live's floor sits on the floor; a decay toward it falls at SF2's rate (100 dB per
+// SF2 time) to within 2.5%.
 {
   const e = ampEnvelope(zone({ [GEN.decayVolEnv]: 1200, [GEN.sustainVolEnv]: 1000 }));
   near(e.sustain, 10 ** (-70 / 20), "sustain floor");
-  near(e.decay, 1400 + 1000 * 2 ** (-12000 / 1200), "decay to floor");
+  const rate = 83.6 / ((e.decay - 1) / 1000) / 100 * 2; // Live dB/s over SF2 dB/s
+  assert.ok(Math.abs(rate - 1) < 0.025, `floor decay rate ratio ${rate}`);
 }
 
 // One envelope per preset: the zone containing middle C wins, and a zone that differs
@@ -49,7 +53,7 @@ near(ampEnvelope(zone({ [GEN.releaseVolEnv]: 0, [GEN.sustainVolEnv]: 1000 })).re
   const low = zone({ [GEN.releaseVolEnv]: 0 }, [0, 59]);
   const mid = zone({ [GEN.releaseVolEnv]: 1200 }, [60, 127]);
   const r = presetEnvelope([low, mid]);
-  near(r.envelope.release, 1400, "middle C zone chosen");
+  near(r.envelope.release, 1672, "middle C zone chosen");
   assert.strictEqual(r.approximated, true);
 }
 
@@ -64,7 +68,7 @@ near(ampEnvelope(zone({ [GEN.releaseVolEnv]: 0, [GEN.sustainVolEnv]: 1000 })).re
 {
   const short = zone({ [GEN.releaseVolEnv]: 0 }, [70, 80]);
   const long = zone({ [GEN.releaseVolEnv]: 1200 }, [81, 90]);
-  near(presetEnvelope([short, long, long]).envelope.release, 1400, "modal envelope");
+  near(presetEnvelope([short, long, long]).envelope.release, 1672, "modal envelope");
 }
 
 // The success dialog shows the count only when something was approximated.
