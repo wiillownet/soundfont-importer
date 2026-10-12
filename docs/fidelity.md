@@ -40,7 +40,10 @@ preset: 56 of 185 in `Touhou.sf2`, of the 62 that get a filter.
 The modulation envelope's sweep of the cutoff (`modEnvToFilterFc`) becomes the filter envelope
 `Amount`, in semitones, clamped to Live's ±72 (SF2 allows ±120). The modulation envelope maps
 onto the filter envelope like the amp envelope does: delay dropped, hold folded into decay,
-decay scaled to the distance to sustain, release timed from full level. Also lost:
+decay scaled to the distance to sustain, release timed from full level. The filter envelope's
+Decay and Release Slope are set to 0 (linear), since SF2's modulation envelope ramps linearly;
+with Live's curved default, a render of `Fifth Sawtooth Wave` closed the sweep about twice as
+fast as sforzando. Also lost:
 
 - **Cutoff below 30 Hz**, Live's minimum, is raised to 30 Hz (3 presets in `Touhou.sf2`).
 - **LFO to cutoff** (`modLfoToFilterFc`) is dropped: 76 zones in `Touhou.sf2`.

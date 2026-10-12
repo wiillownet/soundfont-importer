@@ -1640,7 +1640,7 @@ ${sampleParts}
 							</DecayLevel>
 							<DecaySlope>
 								<LomId Value="0" />
-								<Manual Value="1" />
+								<Manual Value="0" />
 								<MidiControllerRange>
 									<Min Value="-1" />
 									<Max Value="1" />
@@ -1696,7 +1696,7 @@ ${sampleParts}
 							</ReleaseLevel>
 							<ReleaseSlope>
 								<LomId Value="0" />
-								<Manual Value="1" />
+								<Manual Value="0" />
 								<MidiControllerRange>
 									<Min Value="-1" />
 									<Max Value="1" />
@@ -2594,6 +2594,8 @@ const FILTER_ENV_MAX_SEMITONES = 72;
 
 // Map one zone's SF2 lowpass onto Sampler's filter. SF2's is 2-pole (12 dB/oct, Slope off in
 // the template) with no key tracking (ModByPitch 0). Resonance is not mapped (docs/decisions.md).
+// The filter envelope's Decay and Release Slope are 0 (linear, Live's default is curved): SF2's mod
+// envelope ramps linearly, and a render showed the curved default closing the sweep about twice as fast.
 // The modulation envelope's sweep becomes the filter envelope: SF2's mod envelope is linear
 // 0..1 and its decay and release are times for a full sweep, so decay is scaled by the distance
 // to sustain, and release is timed from full level as for the amp envelope. Hold folds into decay;
