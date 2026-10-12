@@ -18,6 +18,9 @@ Fork of SoundFont Importer by Nora Korra. Focus: conversion fidelity.
   ignored, so the loop seam landed a few samples off (421 zones in `Touhou.sf2`, e.g.
   Clarinet). Sample start/end offsets are applied too, and none of these are read at preset
   level, per the spec.
+- The SF2 lowpass filter sets Sampler's filter: cutoff, plus the modulation envelope's sweep
+  as the filter envelope. Resonance is not mapped. Presets whose zones filter differently are
+  approximated and counted like the envelope.
 
 ## 1.0.0
 

@@ -3,11 +3,9 @@
 Live's Sampler cannot represent everything an SF2 carries. This file records what is
 dropped, so nobody has to rediscover it by ear.
 
-Incomplete while Phases 2-4 are in progress; entries are added as each phase lands.
+## Filter resonance
 
-## Filter resonance (decided, not implemented)
-
-SF2's `initialFilterQ` is discarded. Only cutoff is mapped.
+SF2's `initialFilterQ` is discarded. Cutoff and its envelope sweep are mapped (below).
 
 Live's Sampler filter exposes no dB-valued resonance field. It has `Res`, normalized
 `0 .. 1.25`, and `LegacyQ`, a Q factor `0.3 .. 10`. Neither is centibels, and the
@@ -27,7 +25,32 @@ a strongly resonant zone before it ships. Do not enable it on the strength of th
 formula looking reasonable.
 
 Conversion warns and names any preset where a non-zero `initialFilterQ` was
-discarded.
+discarded on a zone whose filter is switched on (18 of 185 presets in `Touhou.sf2`).
+
+## Filter: one per preset, not per zone
+
+SF2's lowpass is per zone; Live's Sampler has one filter per device. As for the amp envelope,
+the converter uses the filter of the zone containing middle C, or the most common one. The
+filter is switched on only when that cutoff is below 18 kHz (SF2's default, ~19.9 kHz, is
+effectively open). It runs at 12 dB/octave (`Slope` off) with no key tracking (`ModByPitch` 0),
+matching SF2. Zones whose filter differs (on versus off, cutoff or sweep more than a semitone
+apart, or a differently shaped sweep) are approximated, and conversion warns and names each such
+preset: 56 of 185 in `Touhou.sf2`, of the 62 that get a filter.
+
+The modulation envelope's sweep of the cutoff (`modEnvToFilterFc`) becomes the filter envelope
+`Amount`, in semitones, clamped to Live's ±72 (SF2 allows ±120). The modulation envelope maps
+onto the filter envelope like the amp envelope does: delay dropped, hold folded into decay,
+decay scaled to the distance to sustain, release timed from full level. Also lost:
+
+- **Cutoff below 30 Hz**, Live's minimum, is raised to 30 Hz (3 presets in `Touhou.sf2`).
+- **LFO to cutoff** (`modLfoToFilterFc`) is dropped: 76 zones in `Touhou.sf2`.
+- **Velocity to cutoff.** SF2's default modulators lower the cutoff for soft notes, by up to
+  2400 cents. Not mapped; Live's `ModByVelocity` stays 0.
+
+Checked against sforzando's SFZ output on 10030 zones: cutoff, on/off and sweep amount match.
+Remaining differences are sforzando's own: it reads `sustainModEnv` nonlinearly (spec: linear
+0.1% units) and floors it near 0.018, writes `cutoff=0` for zones with a Q but no cutoff, and
+writes a preset-level cutoff offset as an absolute cutoff (`BassPick&Mutes` plays at 6 Hz).
 
 ## Tuning on multi-key fixed-pitch zones
 

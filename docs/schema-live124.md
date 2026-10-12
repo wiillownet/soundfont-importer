@@ -252,7 +252,7 @@ lossless relative to today (today writes no filter at all).
 | `Detune` true bounds | **Resolved (2026-10-11):** integer cents, `-50 … 50`. A preset saved from Live 12.4 with the UI dragged to both ends stored `50` and `-50`. |
 | `Panorama` bounds | **Resolved (2026-10-11):** `-1 … 1`, negative = left. Live's 50L and 50R stored `-1` and `1`, so `pan / 500` keeps SF2's sign. |
 | `TuneScale` bounds | **Partly resolved (2026-10-11):** a percentage, `0` = fixed pitch (Live's 0 % stored `0`). Values above 100 untested; the converter clamps to 100. |
-| Filter resonance mapping | Blocked, see §7. |
+| Filter resonance mapping | Not mapped (decision 2026-08-22); cutoff and filter envelope are, see `docs/fidelity.md`. |
 | Live 12.4 load test | **Done (2026-10-11):** the re-based template loads in Live 12.4.6 with all zones and samples resolved. |
 
 The reference preset is `reference/live124-sampler.adv` (gitignored; saved by the repo owner from

@@ -395,13 +395,13 @@ function successDialogHtml(result, language) {
     title: "SoundFont import klaar!",
     hint: "Voeg de map \"SoundFont Imports\" toe aan Ableton Places voor snelle toegang tot je geconverteerde presets!",
     outputFolder: "Output map:",
-    approximated: (n) => `${n} presets gebruiken benaderde instellingen (stemming of envelope) die de Sampler van Live niet exact kan weergeven.`,
+    approximated: (n) => `${n} presets gebruiken benaderde instellingen (stemming, envelope of filter) die de Sampler van Live niet exact kan weergeven.`,
     ok: "Einde",
   } : {
     title: "SoundFont import complete!",
     hint: "Add the \"SoundFont Imports\" folder to Ableton Places for easy access to your converted presets!",
     outputFolder: "Output folder:",
-    approximated: (n) => `${n} presets use approximated settings (tuning or envelope) that Live's Sampler cannot reproduce exactly.`,
+    approximated: (n) => `${n} presets use approximated settings (tuning, envelope or filter) that Live's Sampler cannot reproduce exactly.`,
     ok: "End",
   };
   const closeScript = `window.webkit?.messageHandlers?.live?.postMessage({method:'close_and_send',params:['ok']});window.chrome?.webview?.postMessage({method:'close_and_send',params:['ok']})`;
@@ -711,6 +711,7 @@ const GEN = {
   startAddrsCoarseOffset: 4,     // units of 32768 frames, added to the sample start
   initialFilterFc: 8,      // filter cutoff, absolute cents
   initialFilterQ: 9,       // filter resonance, centibels
+  modEnvToFilterFc: 11,    // cents of cutoff at the modulation envelope's peak
   pan: 17,                 // -500 hard left .. +500 hard right, units of 0.1%
   delayVolEnv: 33,         // timecents
   attackVolEnv: 34,        // timecents
@@ -718,6 +719,12 @@ const GEN = {
   decayVolEnv: 36,         // timecents
   sustainVolEnv: 37,       // centibels of attenuation below full
   releaseVolEnv: 38,       // timecents
+  delayModEnv: 25,         // timecents
+  attackModEnv: 26,        // timecents
+  holdModEnv: 27,          // timecents
+  decayModEnv: 28,         // timecents
+  sustainModEnv: 29,       // 0.1% units of decrease below full
+  releaseModEnv: 30,       // timecents
   endAddrsCoarseOffset: 12,      // units of 32768 frames, added to the sample end
   instrument: 41,          // index into INST
   keyRange: 43,            // packed lo/hi bytes
@@ -740,7 +747,14 @@ const GEN = {
 const GEN_DEFAULTS = {
   [GEN.initialFilterFc]: 13500,   // ~19.9 kHz, i.e. effectively open
   [GEN.initialFilterQ]: 0,
+  [GEN.modEnvToFilterFc]: 0,
   [GEN.pan]: 0,
+  [GEN.delayModEnv]: -12000,
+  [GEN.attackModEnv]: -12000,
+  [GEN.holdModEnv]: -12000,
+  [GEN.decayModEnv]: -12000,
+  [GEN.sustainModEnv]: 0,
+  [GEN.releaseModEnv]: -12000,
   [GEN.delayVolEnv]: -12000,
   [GEN.attackVolEnv]: -12000,
   [GEN.holdVolEnv]: -12000,
@@ -774,7 +788,14 @@ const RAW_GENERATORS = new Set([GEN.instrument, GEN.keyRange, GEN.velRange, GEN.
 const GEN_RANGES = {
   [GEN.initialFilterFc]: [1500, 13500],
   [GEN.initialFilterQ]: [0, 960],
+  [GEN.modEnvToFilterFc]: [-12000, 12000],
   [GEN.pan]: [-500, 500],
+  [GEN.delayModEnv]: [-12000, 5000],
+  [GEN.attackModEnv]: [-12000, 8000],
+  [GEN.holdModEnv]: [-12000, 5000],
+  [GEN.decayModEnv]: [-12000, 8000],
+  [GEN.sustainModEnv]: [0, 1000],
+  [GEN.releaseModEnv]: [-12000, 8000],
   [GEN.delayVolEnv]: [-12000, 5000],
   [GEN.attackVolEnv]: [-12000, 8000],
   [GEN.holdVolEnv]: [-12000, 5000],
@@ -1155,10 +1176,13 @@ const ADV_HEADER = '<Ableton MajorVersion="5" MinorVersion="12.0_12402" SchemaCh
 function samplerPresetXml({ presetName, zones, exportedByIndex, samplesDir, userLibrary, approximated }) {
   const params = zones.map(abletonZoneParams);
   const { envelope, approximated: envelopeApproximated } = presetEnvelope(zones);
+  const { filter, approximated: filterApproximated, resonanceDropped } = presetFilter(zones);
   const lost = params.filter((p) => p.tuningLost).length;
   const reasons = [];
   if (lost) reasons.push(`tuning on ${lost} zone(s) (Live's per-zone Detune holds +-${DETUNE_MAX_CENTS} cents, Scale 0-${TUNE_SCALE_MAX}%)`);
   if (envelopeApproximated) reasons.push("amp envelope (zones differ; Live's Sampler has one envelope per device)");
+  if (filterApproximated) reasons.push("filter (zones differ; Live's Sampler has one filter per device)");
+  if (resonanceDropped) reasons.push("filter resonance (not mapped)");
   if (reasons.length) {
     console.warn(`[soundfont-importer] "${presetName}" approximated: ${reasons.join("; ")}`);
     approximated.push(presetName);
@@ -1410,7 +1434,7 @@ ${sampleParts}
 		<Filter>
 			<IsOn>
 				<LomId Value="0" />
-				<Manual Value="false" />
+				<Manual Value="${filter.on}" />
 				<AutomationTarget Id="0">
 					<LockEnvelope Value="0" />
 				</AutomationTarget>
@@ -1464,7 +1488,7 @@ ${sampleParts}
 						</CircuitBpNoMo>
 						<Slope>
 							<LomId Value="0" />
-							<Manual Value="true" />
+							<Manual Value="false" />
 							<AutomationTarget Id="0">
 								<LockEnvelope Value="0" />
 							</AutomationTarget>
@@ -1475,7 +1499,7 @@ ${sampleParts}
 						</Slope>
 						<Freq>
 							<LomId Value="0" />
-							<Manual Value="22000" />
+							<Manual Value="${filter.freq}" />
 							<MidiControllerRange>
 								<Min Value="30" />
 								<Max Value="22000" />
@@ -1546,7 +1570,7 @@ ${sampleParts}
 						<Envelope>
 							<AttackTime>
 								<LomId Value="0" />
-								<Manual Value="0.1000000015" />
+								<Manual Value="${filter.attack}" />
 								<MidiControllerRange>
 									<Min Value="0.1000000015" />
 									<Max Value="20000" />
@@ -1588,7 +1612,7 @@ ${sampleParts}
 							</AttackSlope>
 							<DecayTime>
 								<LomId Value="0" />
-								<Manual Value="600" />
+								<Manual Value="${filter.decay}" />
 								<MidiControllerRange>
 									<Min Value="1" />
 									<Max Value="60000" />
@@ -1630,7 +1654,7 @@ ${sampleParts}
 							</DecaySlope>
 							<SustainLevel>
 								<LomId Value="0" />
-								<Manual Value="0" />
+								<Manual Value="${filter.sustain}" />
 								<MidiControllerRange>
 									<Min Value="0" />
 									<Max Value="1" />
@@ -1644,7 +1668,7 @@ ${sampleParts}
 							</SustainLevel>
 							<ReleaseTime>
 								<LomId Value="0" />
-								<Manual Value="50" />
+								<Manual Value="${filter.release}" />
 								<MidiControllerRange>
 									<Min Value="1" />
 									<Max Value="60000" />
@@ -1751,7 +1775,7 @@ ${sampleParts}
 							</IsOn>
 							<Amount>
 								<LomId Value="0" />
-								<Manual Value="0" />
+								<Manual Value="${filter.amount}" />
 								<MidiControllerRange>
 									<Min Value="-72" />
 									<Max Value="72" />
@@ -1767,7 +1791,7 @@ ${sampleParts}
 						</Envelope>
 						<ModByPitch>
 							<LomId Value="0" />
-							<Manual Value="1" />
+							<Manual Value="0" />
 							<MidiControllerRange>
 								<Min Value="0" />
 								<Max Value="1" />
@@ -2541,22 +2565,70 @@ function envelopesDiffer(a, b) {
     || Math.abs(db(a.sustain) - db(b.sustain)) > ENV_SUSTAIN_TOLERANCE_DB;
 }
 
-// SF2 has an envelope per zone, Sampler one per device. Use the zone that plays middle C
-// (most likely to be played and auditioned), else the most common envelope, and report
+// SF2 sets these per zone, Sampler once per device. Use the zone that plays middle C
+// (most likely to be played and auditioned), else the most common value, and report
 // whether any zone differs audibly from the one chosen.
-function presetEnvelope(zones) {
-  const envelopes = zones.map(ampEnvelope);
+function presetChoice(zones, values, differ) {
   const middleC = zones.findIndex((zone) => zone.keyMin <= 60 && 60 <= zone.keyMax);
-  let chosen = envelopes[middleC];
+  let chosen = values[middleC];
   if (!chosen) {
     const counts = new Map();
-    for (const env of envelopes) {
-      const key = JSON.stringify(env);
+    for (const value of values) {
+      const key = JSON.stringify(value);
       counts.set(key, (counts.get(key) || 0) + 1);
     }
     chosen = JSON.parse([...counts].sort((a, b) => b[1] - a[1])[0][0]);
   }
-  return { envelope: chosen, approximated: envelopes.some((env) => envelopesDiffer(env, chosen)) };
+  return { chosen, approximated: values.some((value) => differ(value, chosen)) };
+}
+
+function presetEnvelope(zones) {
+  const { chosen, approximated } = presetChoice(zones, zones.map(ampEnvelope), envelopesDiffer);
+  return { envelope: chosen, approximated };
+}
+
+// Live's filter: cutoff 30..22000 Hz, envelope Amount in semitones, from its default preset.
+const FILTER_OPEN_HZ = 18000; // SF2's default 13500 cents is ~19.9 kHz; above this, leave the filter off
+const FILTER_FREQ_LIMITS = [30, 22000];
+const FILTER_ENV_MAX_SEMITONES = 72;
+
+// Map one zone's SF2 lowpass onto Sampler's filter. SF2's is 2-pole (12 dB/oct, Slope off in
+// the template) with no key tracking (ModByPitch 0). Resonance is not mapped (docs/decisions.md).
+// The modulation envelope's sweep becomes the filter envelope: SF2's mod envelope is linear
+// 0..1 and its decay and release are times for a full sweep, so decay is scaled by the distance
+// to sustain, and release is timed from full level as for the amp envelope. Hold folds into decay;
+// delay is dropped.
+function zoneFilter(zone) {
+  const gens = zone.gens;
+  const ms = (op) => 1000 * 2 ** (gens[op] / 1200);
+  const hz = 440 * 2 ** ((gens[GEN.initialFilterFc] - 6900) / 1200); // absolute cents, 6900 = A440
+  const sustain = 1 - gens[GEN.sustainModEnv] / 1000;
+  return {
+    on: hz < FILTER_OPEN_HZ,
+    freq: round10(Math.max(FILTER_FREQ_LIMITS[0], Math.min(FILTER_FREQ_LIMITS[1], hz))),
+    amount: round10(Math.max(-FILTER_ENV_MAX_SEMITONES, Math.min(FILTER_ENV_MAX_SEMITONES, gens[GEN.modEnvToFilterFc] / 100))),
+    attack: clampEnv("attack", ms(GEN.attackModEnv)),
+    decay: clampEnv("decay", ms(GEN.holdModEnv) + ms(GEN.decayModEnv) * (1 - sustain)),
+    sustain: round10(sustain),
+    release: clampEnv("release", ms(GEN.releaseModEnv)),
+  };
+}
+
+// Within a semitone of cutoff or sweep, and the envelope tolerances above, counts as the same.
+function filtersDiffer(a, b) {
+  if (a.on !== b.on) return true;
+  if (!a.on) return false;
+  const timeOff = (x, y) => Math.max(x, y) / Math.min(x, y) > ENV_TIME_TOLERANCE;
+  return Math.abs(12 * Math.log2(a.freq / b.freq)) > 1 || Math.abs(a.amount - b.amount) > 1
+    || ((a.amount || b.amount) && (timeOff(a.attack, b.attack) || timeOff(a.decay, b.decay)
+      || timeOff(a.release, b.release) || Math.abs(a.sustain - b.sustain) > 0.1));
+}
+
+function presetFilter(zones) {
+  const filters = zones.map(zoneFilter);
+  const { chosen, approximated } = presetChoice(zones, filters, filtersDiffer);
+  const resonanceDropped = chosen.on && zones.some((zone, i) => filters[i].on && zone.gens[GEN.initialFilterQ] > 0);
+  return { filter: chosen, approximated, resonanceDropped };
 }
 
 // A zone's sample and loop bounds in frames of its AIFF, inclusive as Live stores them. The
@@ -2776,4 +2848,4 @@ function activate(extensionHost) {
   console.log("SoundFont Importer activate() finished.");
 }
 
-module.exports = { activate, _test: { parseSoundFont, writeAiffSamples, writeSamplerPresets, resolveZoneGenerators, signedAmount, abletonZoneParams, zoneSampleBounds, ampEnvelope, presetEnvelope, successDialogHtml, GEN, GEN_DEFAULTS } };
+module.exports = { activate, _test: { parseSoundFont, writeAiffSamples, writeSamplerPresets, resolveZoneGenerators, signedAmount, abletonZoneParams, zoneSampleBounds, ampEnvelope, presetEnvelope, zoneFilter, presetFilter, successDialogHtml, GEN, GEN_DEFAULTS } };

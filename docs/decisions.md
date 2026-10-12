@@ -6,6 +6,22 @@
 
 # Decisions
 
+## [2026-10-11] Map the filter's modulation-envelope sweep, not just the cutoff
+**Decision:** Phase 4 maps `modEnvToFilterFc` and the SF2 modulation envelope onto Sampler's
+filter envelope (`Amount` in semitones, ADSR converted like the amp envelope), going beyond the
+brief's cutoff-only scope. The filter runs with key tracking off (`ModByPitch` 0, Live's default
+is 1) and 12 dB slope.
+
+**Reason:** In `Touhou.sf2`, 1625 of the 3427 zones with a cutoff below 18 kHz also sweep it
+with the modulation envelope: the filter opens on the attack and closes as it decays. Writing
+the static cutoff alone would leave those filters stuck closed, duller than the previous
+behaviour of no filter at all. SF2 has no cutoff key tracking, so Live's default of 1 would move
+the cutoff with every note.
+
+**Alternatives considered:** Cutoff only as briefed (rejected: about 40 presets would get worse).
+Cutoff only and leave swept presets unfiltered (rejected: never worse, but drops the filter
+where it matters most).
+
 ## [2026-10-11] Amp envelope: decay scaled to sustain, release timed from full level
 **Decision:** SF2's decay and release rates (time for a 100 dB change) become Live durations
 as follows. Decay = hold + SF2 decay x (sustain depth in dB, at most 70) / 100. Release = SF2
